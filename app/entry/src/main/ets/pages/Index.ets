@@ -24,6 +24,7 @@ struct Index {
   @State draftFixedDays: number = 3;
   @State newSubjectName: string = '';
   @State calendarProgress: number = 1;
+  @State dotVisible: number = 6;
   @State todayLabel: string = '';
   @State reviewScale: number = 0.97;
   @State isTablet: boolean = false;
@@ -41,6 +42,12 @@ struct Index {
   @State pageOpacity: number = 1;
   @State pageShift: number = 0;
   @State pressedItemId: string = '';
+  @State showItemActions: boolean = false;
+  @State actionItem: StudyItem = emptyItem();
+  @State actionMode: string = 'view';
+  @State editTitle: string = '';
+  @State editSubjectId: string = '';
+  @State actionScale: number = 1;
   private reviewBusy: boolean = false;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
@@ -64,6 +71,7 @@ struct Index {
       this.draftSubjectId = this.subjects[0].id;
     }
     this.playEntry();
+    this.playDots();
     this.refreshNotificationState();
     if (this.settings.reminderEnabled && this.items.length > 0) {
       this.syncReminder();
@@ -97,6 +105,7 @@ struct Index {
 
   private openComposer(): void {
     this.showComposer = true;
+    this.playDots();
     this.composerScale = 0.92;
     this.composerShift = 24;
     this.composerOpacity = 0;
@@ -217,10 +226,9 @@ struct Index {
       });
       if (next === 0) {
         this.playEntry();
+        this.playDots();
       }
-      if (next === 2) {
-        this.playCalendar();
-      }
+      this.playCalendar();
     }, 80);
   }
 
@@ -437,23 +445,58 @@ struct Index {
     this.toast('已添加 ' + name);
   }
 
-  private confirmDeleteItem(item: StudyItem): void {
-    AlertDialog.show({
-      title: '删除这条记录？',
-      message: item.title,
-      primaryButton: {
-        value: '取消',
-        action: () => {
-        }
-      },
-      secondaryButton: {
-        value: '删除',
-        fontColor: '#C7422C',
-        action: () => {
-          this.deleteItem(item.id);
-        }
-      }
+  private openItemActions(item: StudyItem): void {
+    this.actionItem = item;
+    this.editTitle = item.title;
+    this.editSubjectId = item.subjectId;
+    this.actionMode = 'view';
+    this.showItemActions = true;
+    this.actionScale = 0.94;
+    animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+      this.actionScale = 1;
     });
+  }
+
+  private closeItemActions(): void {
+    this.showItemActions = false;
+  }
+
+  private startEditItem(): void {
+    this.editTitle = this.actionItem.title;
+    this.editSubjectId = this.actionItem.subjectId;
+    this.actionMode = 'edit';
+  }
+
+  private saveItemEdit(): void {
+    const title = this.editTitle.trim();
+    if (title.length === 0) {
+      this.toast('标题不能为空');
+      return;
+    }
+    const updated: StudyItem = {
+      id: this.actionItem.id,
+      subjectId: this.editSubjectId,
+      title: title,
+      createdAt: this.actionItem.createdAt,
+      scheduleMode: this.actionItem.scheduleMode,
+      curveStage: this.actionItem.curveStage,
+      fixedIntervalDays: this.actionItem.fixedIntervalDays,
+      currentIntervalDays: this.actionItem.currentIntervalDays,
+      nextReviewAt: this.actionItem.nextReviewAt,
+      lastReviewedAt: this.actionItem.lastReviewedAt,
+      reviewCount: this.actionItem.reviewCount,
+      status: this.actionItem.status
+    };
+    this.items = this.items.map((item: StudyItem) => item.id === updated.id ? updated : item);
+    this.showItemActions = false;
+    this.persist();
+    this.toast('已修改');
+  }
+
+  private deleteFromAction(): void {
+    const id = this.actionItem.id;
+    this.showItemActions = false;
+    this.deleteItem(id);
   }
 
   private deleteItem(id: string): void {
@@ -467,16 +510,25 @@ struct Index {
     this.toast('已删除');
   }
 
+  private playDots(): void {
+    this.dotVisible = 0;
+    for (let i = 0; i < 6; i++) {
+      setTimeout(() => {
+        this.dotVisible = i + 1;
+      }, i * 70);
+    }
+  }
+
   private playCalendar(): void {
     this.calendarProgress = 0;
-    animateTo({ duration: 320, curve: Curve.EaseOut }, () => {
-      this.calendarProgress = 1.12;
+    animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
+      this.calendarProgress = 1.08;
     });
     setTimeout(() => {
-      animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 1;
       });
-    }, 320);
+    }, 260);
   }
 
   build() {
@@ -491,6 +543,9 @@ struct Index {
       }
       if (this.showComposer && !this.isWide) {
         this.ComposerOverlay()
+      }
+      if (this.showItemActions) {
+        this.ItemActionsOverlay()
       }
     }
     .width('100%')
@@ -563,11 +618,26 @@ struct Index {
       .margin({ top: 24 })
       .alignItems(HorizontalAlign.Center)
 
-      Column({ space: 9 }) {
-        ForEach(this.navLabels, (label: string, index: number) => {
-          this.NavItem(index, this.navGlyphs[index], label)
-        })
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row()
+          .width(64)
+          .height(58)
+          .backgroundColor(Tokens.yellowSoft)
+          .borderRadius(18)
+          .borderWidth(1)
+          .borderColor('#B3FFD45E')
+          .translate({ y: this.tab * 67 })
+          .animation({ duration: 180, curve: Curve.EaseOut })
+
+        Column({ space: 9 }) {
+          ForEach(this.navLabels, (label: string, index: number) => {
+            this.NavItem(index, this.navGlyphs[index], label)
+          })
+        }
+        .width(64)
       }
+      .width(64)
+      .height(259)
       .margin({ top: 42 })
 
       Blank()
@@ -595,12 +665,6 @@ struct Index {
     .width(64)
     .height(58)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.tab === index ? Tokens.yellowSoft : Color.Transparent)
-    .borderRadius(18)
-    .borderWidth(this.tab === index ? 1 : 0)
-    .borderColor('#B3FFD45E')
-    .scale({ x: this.tab === index ? 1.03 : 1, y: this.tab === index ? 1.03 : 1 })
-    .animation({ duration: 260, curve: Curve.EaseOut })
     .onClick(() => {
       this.switchTab(index);
     })
@@ -666,8 +730,13 @@ struct Index {
           if (this.dueItems().length === 0) {
             this.EmptyToday()
           } else {
-            ForEach(this.dueItems(), (item: StudyItem) => {
-              this.ReviewRow(item)
+            ForEach(this.dueItems(), (item: StudyItem, index: number) => {
+              Column() {
+                this.ReviewRow(item)
+              }
+              .width('100%')
+              .translate({ x: (1 - this.calendarProgress) * (30 + index * 8) })
+              .opacity(Math.min(1, this.calendarProgress))
             }, (item: StudyItem) => item.id)
           }
           if (this.todayCreatedItems().length > 0) {
@@ -689,12 +758,14 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
     .opacity(this.pageOpacity)
     .translate({ x: this.pageShift })
+    .clip(true)
     .padding({
       left: this.isWide ? 44 : 20,
       right: this.isWide ? 24 : 20,
       top: this.isWide ? 10 : 8,
       bottom: this.isWide ? 24 : 12
     })
+    .clip(true)
   }
 
   @Builder EmptyToday() {
@@ -750,7 +821,7 @@ struct Index {
       .width('100%')
       .margin({ top: 8, bottom: 2 })
 
-      ForEach(this.todayCreatedItems(), (item: StudyItem) => {
+      ForEach(this.todayCreatedItems(), (item: StudyItem, index: number) => {
         Row() {
           Circle({ width: 7, height: 7 })
             .fill(this.findSubject(item.subjectId).color)
@@ -776,8 +847,10 @@ struct Index {
         .borderRadius(16)
         .borderWidth(1)
         .borderColor('#B3FFFFFF')
+        .translate({ x: (1 - this.calendarProgress) * (30 + index * 8) })
+        .opacity(Math.min(1, this.calendarProgress))
         .gesture(LongPressGesture().onAction(() => {
-          this.confirmDeleteItem(item);
+          this.openItemActions(item);
         }))
       }, (item: StudyItem) => item.id)
     }
@@ -978,6 +1051,7 @@ struct Index {
             .borderRadius(9)
             .onClick(() => {
               this.draftMode = 'curve';
+              this.playDots();
             })
           Button('固定间隔')
             .layoutWeight(1)
@@ -1045,6 +1119,10 @@ struct Index {
                 .margin({ top: 5 })
             }
             .layoutWeight(1)
+            .opacity(this.dotVisible > index ? 1 : 0)
+            .translate({ y: this.dotVisible > index ? 0 : 6 })
+            .scale({ x: this.dotVisible > index ? 1 : 0.6, y: this.dotVisible > index ? 1 : 0.6 })
+            .animation({ duration: 180, curve: Curve.EaseOut })
           })
         }
         .width('100%')
@@ -1127,7 +1205,7 @@ struct Index {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.ink)
         Blank()
-        Text('长按删除')
+        Text('长按管理')
           .fontSize(9)
           .fontColor(Tokens.mutedSoft)
           .margin({ right: 10 })
@@ -1145,7 +1223,7 @@ struct Index {
           .margin({ top: 80 })
       } else {
         List({ space: 10 }) {
-          ForEach(this.sortedItems(), (item: StudyItem) => {
+          ForEach(this.sortedItems(), (item: StudyItem, index: number) => {
             ListItem() {
               Row() {
                 Column() {
@@ -1193,8 +1271,10 @@ struct Index {
               .borderRadius(18)
               .borderWidth(1)
               .borderColor('#B3FFFFFF')
+              .translate({ x: (1 - this.calendarProgress) * (40 + index * 8) })
+              .opacity(Math.min(1, this.calendarProgress))
               .gesture(LongPressGesture().onAction(() => {
-                this.confirmDeleteItem(item);
+                this.openItemActions(item);
               }))
             }
           }, (item: StudyItem) => item.id)
@@ -1211,6 +1291,7 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
     .opacity(this.pageOpacity)
     .translate({ x: this.pageShift })
+    .clip(true)
     .padding({ left: this.isWide ? 52 : 20, right: this.isWide ? 52 : 20, top: 6, bottom: 24 })
   }
 
@@ -1292,6 +1373,7 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
     .opacity(this.pageOpacity)
     .translate({ x: this.pageShift })
+    .clip(true)
     .padding({ left: this.isWide ? 52 : 20, right: this.isWide ? 52 : 20, bottom: 24 })
   }
 
@@ -1391,6 +1473,8 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
+      .translate({ x: (1 - this.calendarProgress) * 30 })
+      .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
         Text('科目')
@@ -1460,6 +1544,8 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
+      .translate({ x: (1 - this.calendarProgress) * 42 })
+      .opacity(Math.min(1, this.calendarProgress))
 
       Text('所有数据只保存在本机，不上传，也不需要账号。')
         .fontSize(9)
@@ -1478,39 +1564,48 @@ struct Index {
     .alignItems(HorizontalAlign.Start)
     .opacity(this.pageOpacity)
     .translate({ x: this.pageShift })
+    .clip(true)
     .padding({ left: this.isWide ? 52 : 20, right: this.isWide ? 52 : 20, bottom: 24 })
   }
 
   @Builder BottomNav() {
     Column() {
-      Row() {
-        ForEach(this.navLabels, (label: string, index: number) => {
-          Column() {
-            Text(this.navGlyphs[index])
-              .fontSize(16)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-            Text(label)
-              .fontSize(8)
-              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-              .margin({ top: 3 })
-          }
-          .layoutWeight(1)
+      Stack({ alignContent: Alignment.Start }) {
+        Row()
+          .width('25%')
           .height(50)
-          .justifyContent(FlexAlign.Center)
-          .backgroundColor(this.tab === index ? Tokens.yellowSoft : Color.Transparent)
+          .backgroundColor(Tokens.yellowSoft)
           .borderRadius(16)
-          .margin({ left: 3, right: 3 })
-          .scale({ x: this.tab === index ? 1.03 : 1, y: this.tab === index ? 1.03 : 1 })
-          .animation({ duration: 260, curve: Curve.EaseOut })
-          .onClick(() => {
-            this.switchTab(index);
+          .translate({ x: (this.tab * 100) + '%' })
+          .animation({ duration: 180, curve: Curve.EaseOut })
+
+        Row() {
+          ForEach(this.navLabels, (label: string, index: number) => {
+            Column() {
+              Text(this.navGlyphs[index])
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+              Text(label)
+                .fontSize(8)
+                .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+                .margin({ top: 3 })
+            }
+            .layoutWeight(1)
+            .height(50)
+            .justifyContent(FlexAlign.Center)
+            .margin({ left: 3, right: 3 })
+            .onClick(() => {
+              this.switchTab(index);
+            })
           })
-        })
+        }
+        .width('100%')
+        .height(50)
       }
       .width('100%')
       .height(58)
-      .padding({ left: 8, right: 8 })
+      .padding({ left: 8, right: 8, top: 4, bottom: 4 })
       .backgroundColor(Tokens.surface)
       .borderRadius(29)
       .borderWidth(1)
@@ -1731,6 +1826,167 @@ struct Index {
     .borderRadius(22)
     .borderWidth(1)
     .borderColor('#FFFFFF')
+  }
+
+  @Builder ItemActionsOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Tokens.dim)
+        .backdropBlur(6)
+        .onClick(() => {
+          this.closeItemActions();
+        })
+
+      Column() {
+        Row() {
+          Text(this.actionMode === 'view' ? '记录' : '修改记录')
+            .fontSize(11)
+            .fontColor(Tokens.muted)
+          Blank()
+          Button('关闭')
+            .height(28)
+            .fontSize(9)
+            .fontColor('#6C4B00')
+            .backgroundColor(Tokens.yellowSoft)
+            .borderRadius(14)
+            .padding({ left: 11, right: 11 })
+            .onClick(() => {
+              this.closeItemActions();
+            })
+        }
+        .width('100%')
+
+        Text(this.actionItem.title)
+          .fontSize(26)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.ink)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .margin({ top: 16 })
+
+        Text(this.findSubject(this.actionItem.subjectId).name + '  ·  下次 ' + formatShort(this.actionItem.nextReviewAt))
+          .fontSize(10)
+          .fontColor(Tokens.muted)
+          .width('100%')
+          .margin({ top: 7 })
+
+        Row()
+          .width('100%')
+          .height(1)
+          .backgroundColor(Tokens.line)
+          .margin({ top: 18, bottom: 16 })
+
+        if (this.actionMode === 'view') {
+          Row({ space: 10 }) {
+            Button('修改')
+              .layoutWeight(1)
+              .height(44)
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#3D2A00')
+              .backgroundColor(Tokens.yellow)
+              .borderRadius(13)
+              .onClick(() => {
+                this.startEditItem();
+              })
+            Button('删除')
+              .layoutWeight(1)
+              .height(44)
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#C7422C')
+              .backgroundColor('#FFE9E4')
+              .borderRadius(13)
+              .onClick(() => {
+                this.deleteFromAction();
+              })
+          }
+          .width('100%')
+        } else {
+          Text('标题')
+            .fontSize(9)
+            .fontColor(Tokens.muted)
+            .width('100%')
+          TextInput({ text: this.editTitle })
+            .height(44)
+            .fontSize(15)
+            .fontColor(Tokens.ink)
+            .backgroundColor(Tokens.surface)
+            .borderWidth(1)
+            .borderColor('#B3FFFFFF')
+            .borderRadius(12)
+            .padding({ left: 12, right: 12 })
+            .margin({ top: 7 })
+            .onChange((value: string) => {
+              this.editTitle = value;
+            })
+
+          Text('科目')
+            .fontSize(9)
+            .fontColor(Tokens.muted)
+            .width('100%')
+            .margin({ top: 14 })
+          Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+            ForEach(this.subjects, (subject: Subject) => {
+              Button(subject.name)
+                .height(30)
+                .fontSize(10)
+                .fontColor(this.editSubjectId === subject.id ? '#3D2A00' : Tokens.inkSoft)
+                .backgroundColor(this.editSubjectId === subject.id ? Tokens.yellow : Tokens.surface)
+                .borderWidth(1)
+                .borderColor(this.editSubjectId === subject.id ? '#CCFFC531' : Tokens.line)
+                .borderRadius(15)
+                .padding({ left: 11, right: 11 })
+                .margin({ right: 6, bottom: 6 })
+                .onClick(() => {
+                  this.editSubjectId = subject.id;
+                })
+            }, (subject: Subject) => subject.id)
+          }
+          .width('100%')
+          .margin({ top: 5 })
+
+          Row({ space: 10 }) {
+            Button('取消')
+              .layoutWeight(1)
+              .height(42)
+              .fontSize(12)
+              .fontColor(Tokens.inkSoft)
+              .backgroundColor(Tokens.surfaceSoft)
+              .borderRadius(12)
+              .onClick(() => {
+                this.actionMode = 'view';
+              })
+            Button('保存')
+              .layoutWeight(1)
+              .height(42)
+              .fontSize(12)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#3D2A00')
+              .backgroundColor(Tokens.yellow)
+              .borderRadius(12)
+              .onClick(() => {
+                this.saveItemEdit();
+              })
+          }
+          .width('100%')
+          .margin({ top: 10 })
+        }
+      }
+      .width(this.isWide ? 480 : '90%')
+      .padding(22)
+      .backgroundColor(Tokens.surface)
+      .borderRadius(26)
+      .borderWidth(1)
+      .borderColor('#CCFFFFFF')
+      .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
+      .scale({ x: this.actionScale, y: this.actionScale })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder ComposerOverlay() {
