@@ -5,6 +5,7 @@ import { Store } from '../data/Store';
 import { scheduleNext, firstReviewAt, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
 import { ReminderService } from '../services/ReminderService';
 import { Tokens } from '../theme/Tokens';
+import { I18n, LanguageOption } from '../services/I18n';
 
 @Entry
 @Component
@@ -96,6 +97,7 @@ struct Index {
     this.items = data.items;
     this.logs = data.logs;
     this.settings = data.settings;
+    this.todayLabel = this.localizedToday();
     this.syncSystemBars();
     if (this.subjects.length > 0) {
       this.draftSubjectId = this.subjects[0].id;
@@ -175,7 +177,7 @@ struct Index {
       settings: this.settings
     };
     Store.save(context, data).catch(() => {
-      this.toast('保存失败，请重试');
+      this.toast(this.t('toastSaveFail'));
     });
   }
 
@@ -188,8 +190,8 @@ struct Index {
         this.refreshNotificationState();
       }, 600);
     }).catch((error: Error) => {
-      this.reminderError = error.message !== undefined ? error.message : '日历提醒未开启';
-      this.toast('提醒设置失败，请检查日历权限');
+      this.reminderError = error.message !== undefined ? error.message : this.t('toastReminderOff');
+      this.toast(this.t('toastReminderFail'));
       this.refreshNotificationState();
     });
   }
@@ -273,8 +275,11 @@ struct Index {
   private itemSubtitle(item: StudyItem): string {
     const base = item.lastReviewedAt > 0 ? item.lastReviewedAt : item.createdAt;
     const days = daysBetween(base, new Date());
-    const prefix = days === 0 ? '今天' : days + ' 天前';
-    return prefix + '  ·  第 ' + (item.reviewCount + 1) + ' 次';
+    const reviewNo = item.reviewCount + 1;
+    if (days === 0) {
+      return this.t('todayNode') + '  ·  ' + this.t('reviewN', reviewNo);
+    }
+    return this.t('subtitle', days, reviewNo);
   }
 
   private progressFor(item: StudyItem): number {
@@ -313,7 +318,16 @@ struct Index {
 
   private lastRating(itemId: string): string {
     const log = this.previousLog(itemId);
-    return log.id.length > 0 ? ratingLabel(log.rating) : '首次';
+    if (log.id.length === 0) {
+      return this.t('first');
+    }
+    if (log.rating === 'forgot') {
+      return this.t('forgot');
+    }
+    if (log.rating === 'fuzzy') {
+      return this.t('fuzzy');
+    }
+    return this.t('got');
   }
 
   private lastInterval(itemId: string): number {
@@ -323,11 +337,11 @@ struct Index {
 
   private intervalHint(rating: string): string {
     const result = scheduleNext(this.reviewItem, rating, new Date());
-    return result.nextIntervalDays === 1 ? '明天' : result.nextIntervalDays + ' 天后';
+    return result.nextIntervalDays === 1 ? this.t('tomorrow') : this.t('daysAfter', result.nextIntervalDays);
   }
 
   private curveLabels(): string[] {
-    return ['开始', '第 1 次', '第 2 次', '今天', '下次', '之后'];
+    return [this.t('start'), this.t('first'), this.t('second'), this.t('todayNode'), this.t('nextNode'), this.t('afterNode')];
   }
 
   private openReview(item: StudyItem): void {
@@ -394,13 +408,13 @@ struct Index {
     this.reviewBusy = false;
     this.persist();
     this.syncReminder();
-    this.toast('下次 ' + formatDate(result.nextAt));
+    this.toast(this.t('toastNext', formatDate(result.nextAt)));
   }
 
   private addItem(): void {
     const title = this.draftTitle.trim();
     if (title.length === 0) {
-      this.toast('先写一句今天学了什么');
+      this.toast(this.t('toastWriteToday'));
       return;
     }
     const now = new Date();
@@ -427,7 +441,7 @@ struct Index {
     this.switchTab(0);
     this.persist();
     this.syncReminder();
-    this.toast('已保存，' + formatDate(firstAt) + ' 提醒');
+    this.toast(this.t('toastSaved', formatDate(firstAt)));
   }
 
   private updateReminderEnabled(value: boolean): void {
@@ -435,7 +449,8 @@ struct Index {
       reminderEnabled: value,
       reminderTime: this.settings.reminderTime,
       subjectTimes: this.settings.subjectTimes,
-      themeIndex: this.settings.themeIndex
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language
     };
     this.persist();
     this.syncReminder();
@@ -446,19 +461,20 @@ struct Index {
       reminderEnabled: this.settings.reminderEnabled,
       reminderTime: value,
       subjectTimes: this.settings.subjectTimes,
-      themeIndex: this.settings.themeIndex
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language
     };
   }
 
   private saveSettings(): void {
     const pattern: RegExp = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
     if (!pattern.test(this.settings.reminderTime)) {
-      this.toast('时间格式请用 20:00');
+      this.toast(this.t('toastTime'));
       return;
     }
     this.persist();
     this.syncReminder();
-    this.toast('设置已保存');
+    this.toast(this.t('toastSettingsSaved'));
   }
 
   private updateTheme(index: number): void {
@@ -466,7 +482,8 @@ struct Index {
       reminderEnabled: this.settings.reminderEnabled,
       reminderTime: this.settings.reminderTime,
       subjectTimes: this.settings.subjectTimes,
-      themeIndex: index
+      themeIndex: index,
+      language: this.settings.language
     };
     this.persist();
     this.syncSystemBars();
@@ -492,6 +509,43 @@ struct Index {
       });
     }).catch(() => {
     });
+  }
+
+  private t(key: string, a?: string | number, b?: string | number): string {
+    return I18n.t(this.settings.language, key, a, b);
+  }
+
+  private navLabel(index: number): string {
+    const keys: string[] = ['navToday', 'navRecords', 'navCalendar', 'navSettings'];
+    const safe = index >= 0 && index < keys.length ? index : 0;
+    return this.t(keys[safe]);
+  }
+
+  private localizedToday(): string {
+    const locale = I18n.locale(this.settings.language);
+    try {
+      const text = new Intl.DateTimeFormat(locale, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long'
+      }).format(new Date());
+      return text.replace(',', ' · ');
+    } catch (error) {
+      return formatFull(Date.now()) + ' · ' + weekdayCN(Date.now());
+    }
+  }
+
+  private setLanguage(code: string): void {
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex,
+      language: code
+    };
+    this.todayLabel = this.localizedToday();
+    this.persist();
   }
 
   private pageColors(index: number): string[] {
@@ -520,12 +574,12 @@ struct Index {
   private addSubject(): void {
     const name = this.newSubjectName.trim();
     if (name.length === 0) {
-      this.toast('先写科目名');
+      this.toast(this.t('toastSubjectEmpty'));
       return;
     }
     for (let i = 0; i < this.subjects.length; i++) {
       if (this.subjects[i].name === name) {
-        this.toast('这个科目已经有了');
+        this.toast(this.t('toastSubjectExists'));
         return;
       }
     }
@@ -538,7 +592,7 @@ struct Index {
     this.draftSubjectId = subject.id;
     this.newSubjectName = '';
     this.persist();
-    this.toast('已添加 ' + name);
+    this.toast(this.t('toastSubjectAdded', name));
   }
 
   private openItemActions(item: StudyItem): void {
@@ -596,7 +650,7 @@ struct Index {
   private saveItemEdit(): void {
     const title = this.editTitle.trim();
     if (title.length === 0) {
-      this.toast('标题不能为空');
+      this.toast(this.t('toastTitleEmpty'));
       return;
     }
     const updated: StudyItem = {
@@ -616,12 +670,12 @@ struct Index {
     this.items = this.items.map((item: StudyItem) => item.id === updated.id ? updated : item);
     this.showItemActions = false;
     this.persist();
-    this.toast('已修改');
+    this.toast(this.t('toastModified'));
   }
 
   private confirmDeleteSubject(subject: Subject): void {
     if (this.subjects.length <= 1) {
-      this.toast('至少保留一个科目');
+      this.toast(this.t('toastAtLeastOne'));
       return;
     }
     let used = 0;
@@ -631,11 +685,11 @@ struct Index {
       }
     }
     if (used > 0) {
-      this.toast('这个科目下还有 ' + used + ' 条记录');
+      this.toast(this.t('toastSubjectUsed', used));
       return;
     }
-    this.confirmTitle = '删除科目';
-    this.confirmMessage = '确定删除「' + subject.name + '」吗？删除后不可恢复。';
+    this.confirmTitle = this.t('deleteSubjectTitle');
+    this.confirmMessage = this.t('deleteSubjectMsg', subject.name);
     this.confirmKind = 'subject';
     this.confirmSubjectId = subject.id;
     this.confirmItemId = '';
@@ -662,15 +716,15 @@ struct Index {
             this.draftSubjectId = this.subjects[0].id;
           }
           this.persist();
-          this.toast('已删除 ' + subject.name);
+          this.toast(this.t('toastSubjectDeleted', subject.name));
         }
       }
     });
   }
 
   private askDeleteRecord(item: StudyItem): void {
-    this.confirmTitle = '删除记录';
-    this.confirmMessage = '确定删除「' + item.title + '」吗？这条记录的复习日志也会一起删除。';
+    this.confirmTitle = this.t('deleteRecordTitle');
+    this.confirmMessage = this.t('deleteRecordMsg', item.title);
     this.confirmKind = 'record';
     this.confirmItemId = item.id;
     this.confirmSubjectId = '';
@@ -697,7 +751,7 @@ struct Index {
         this.draftSubjectId = this.subjects[0].id;
       }
       this.persist();
-      this.toast('已删除科目');
+      this.toast(this.t('toastDeleted'));
     } else if (kind === 'record') {
       this.deleteItem(itemId);
     }
@@ -715,7 +769,7 @@ struct Index {
     }
     this.persist();
     this.syncReminder();
-    this.toast('已删除');
+    this.toast(this.t('toastDeleted'));
   }
 
   private playForm(): void {
@@ -881,8 +935,8 @@ struct Index {
       .alignItems(HorizontalAlign.Center)
 
       Column({ space: 9 }) {
-        ForEach(this.navLabels, (label: string, index: number) => {
-          this.NavItem(index, label)
+        ForEach([0, 1, 2, 3], (index: number) => {
+          this.NavItem(index, this.navLabel(index))
         })
       }
       .width(64)
@@ -927,7 +981,7 @@ struct Index {
         .fontColor(Tokens.muted)
       Blank()
       if (showAdd) {
-        Button('记一条')
+        Button(this.t('newEntry'))
           .height(34)
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
@@ -950,7 +1004,7 @@ struct Index {
   @Builder TodayPane() {
     Column() {
       Row() {
-        Text('今日复习')
+        Text(this.t('todayTitle'))
           .fontSize(this.isWide ? 48 : 34)
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.ink)
@@ -958,7 +1012,7 @@ struct Index {
         Row() {
           Circle({ width: 5, height: 5 })
             .fill(Tokens.orange)
-          Text(this.dueItems().length + ' 条')
+          Text(this.t('items', this.dueItems().length))
             .fontSize(11)
             .fontWeight(FontWeight.Medium)
             .fontColor('#9B5C00')
@@ -1022,15 +1076,15 @@ struct Index {
 
   @Builder EmptyToday() {
     Column() {
-      Text('今天还没有要复习的')
+      Text(this.t('todayEmptyTitle'))
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
         .fontColor(Tokens.inkSoft)
-      Text('记下今天学的内容，到点提醒你。')
+      Text(this.t('todayEmptyBody'))
         .fontSize(11)
         .fontColor(Tokens.muted)
         .margin({ top: 8 })
-      Button('记一条')
+      Button(this.t('newEntry'))
         .height(38)
         .fontSize(12)
         .fontColor('#3D2A00')
@@ -1054,16 +1108,16 @@ struct Index {
   @Builder TodayLogged() {
     Column({ space: 8 }) {
       Row() {
-        Text('今天已记')
+        Text(this.t('todayLogged'))
           .fontSize(12)
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.inkSoft)
-        Text(this.todayCreatedItems().length + ' 条')
+        Text(this.t('items', this.todayCreatedItems().length))
           .fontSize(9)
           .fontColor(Tokens.mutedSoft)
           .margin({ left: 7 })
         Blank()
-        Text('查看全部')
+        Text(this.t('seeAll'))
           .fontSize(9)
           .fontColor('#B16A0A')
           .onClick(() => {
@@ -1084,7 +1138,7 @@ struct Index {
               .fontColor(Tokens.ink)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(this.findSubject(item.subjectId).name + '  ·  下次 ' + formatShort(item.nextReviewAt))
+            Text(this.findSubject(item.subjectId).name + '  ·  ' + this.t('next') + ' ' + formatShort(item.nextReviewAt))
               .fontSize(9)
               .fontColor(Tokens.muted)
               .margin({ top: 3 })
@@ -1131,7 +1185,7 @@ struct Index {
             .fontSize(10)
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.muted)
-          Text(item.scheduleMode === 'fixed' ? '固定间隔' : '遗忘曲线')
+          Text(item.scheduleMode === 'fixed' ? this.t('fixed') : this.t('curve'))
             .fontSize(9)
             .fontColor(Tokens.mutedSoft)
             .margin({ left: 8 })
@@ -1164,7 +1218,7 @@ struct Index {
       .alignItems(HorizontalAlign.Start)
       .margin({ left: 14, right: 12 })
 
-      Button('复习')
+      Button(this.t('review'))
         .height(32)
         .fontSize(10.5)
         .fontColor(Tokens.inkSoft)
@@ -1202,7 +1256,7 @@ struct Index {
   @Builder ComposerPane(showClose: boolean) {
     Column() {
       Row() {
-        Text('记一条')
+        Text(this.t('newEntry'))
           .fontSize(28)
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.ink)
@@ -1219,7 +1273,7 @@ struct Index {
             .margin({ top: 3 })
         }
         if (showClose) {
-          Button('关闭')
+          Button(this.t('close'))
             .height(26)
             .fontSize(9)
             .fontColor('#6C4B00')
@@ -1236,7 +1290,7 @@ struct Index {
       .alignItems(VerticalAlign.Top)
       .margin({ bottom: 16 })
 
-      Text('科目')
+      Text(this.t('subject'))
         .fontSize(9)
         .fontColor(Tokens.muted)
         .margin({ bottom: 8 })
@@ -1263,12 +1317,12 @@ struct Index {
       .width('100%')
       .margin({ bottom: 18 })
 
-      Text('章节 / 知识点')
+      Text(this.t('chapter'))
         .fontSize(9)
         .fontColor(Tokens.muted)
         .margin({ bottom: 8 })
 
-      TextInput({ placeholder: '例如：导数的几何意义', text: this.draftTitle })
+      TextInput({ placeholder: this.t('titlePlaceholder'), text: this.draftTitle })
         .id('titleInput')
         .height(50)
         .fontSize(20)
@@ -1297,7 +1351,7 @@ struct Index {
           this.draftTitle = value;
         })
 
-      Text('复习安排')
+      Text(this.t('plan'))
         .fontSize(9)
         .fontColor(Tokens.muted)
         .margin({ top: 18, bottom: 8 })
@@ -1312,7 +1366,7 @@ struct Index {
           .animation({ duration: 220, curve: Curve.EaseOut })
 
         Row() {
-          Button('遗忘曲线')
+          Button(this.t('curve'))
             .layoutWeight(1)
             .height(32)
             .fontSize(11)
@@ -1324,7 +1378,7 @@ struct Index {
               this.draftMode = 'curve';
               this.playDots();
             })
-          Button('固定间隔')
+          Button(this.t('fixed'))
             .layoutWeight(1)
             .height(32)
             .fontSize(11)
@@ -1345,7 +1399,7 @@ struct Index {
 
       Stack({ alignContent: Alignment.TopStart }) {
         Row() {
-          ForEach(['今天', '1 天', '2 天', '4 天', '7 天', '15 天'], (label: string, index: number) => {
+          ForEach(this.curveLabels(), (label: string, index: number) => {
             Column() {
               Circle({ width: 8, height: 8 })
                 .fill(index === 0 ? Tokens.orange : Tokens.surface)
@@ -1372,7 +1426,7 @@ struct Index {
         .animation({ duration: 220, curve: Curve.EaseOut })
 
         Row() {
-          Text('每')
+          Text(this.t('every'))
             .fontSize(11)
             .fontColor(Tokens.muted)
           Stack({ alignContent: Alignment.Center }) {
@@ -1407,7 +1461,7 @@ struct Index {
                 this.draftFixedDays = Math.min(90, Math.round(days));
               }
             })
-          Text('天')
+          Text(this.t('dayUnit'))
             .fontSize(11)
             .fontColor(Tokens.muted)
             .margin({ left: 4 })
@@ -1443,7 +1497,7 @@ struct Index {
 
       Row() {
         Column() {
-          Text('到点提醒我')
+          Text(this.t('remindMe'))
             .fontSize(11)
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.inkSoft)
@@ -1468,7 +1522,7 @@ struct Index {
       .borderRadius(15)
       .margin({ top: 14 })
 
-      Button('保存')
+      Button(this.t('save'))
         .width('100%')
         .height(50)
         .fontSize(13)
@@ -1481,7 +1535,7 @@ struct Index {
           this.addItem();
         })
 
-      Text('只保存在本机')
+      Text(this.t('localOnly'))
         .fontSize(8.5)
         .fontColor(Tokens.mutedSoft)
         .width('100%')
@@ -1514,16 +1568,16 @@ struct Index {
   @Builder RecordsPage() {
     Column() {
       Row() {
-        Text('记录')
+        Text(this.t('recordsTitle'))
           .fontSize(this.isWide ? 44 : 32)
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.ink)
         Blank()
-        Text('长按管理')
+        Text(this.t('longPressManage'))
           .fontSize(9)
           .fontColor(Tokens.mutedSoft)
           .margin({ right: 10 })
-        Text(this.items.length + ' 条')
+        Text(this.t('items', this.items.length))
           .fontSize(11)
           .fontColor(Tokens.muted)
       }
@@ -1531,7 +1585,7 @@ struct Index {
       .margin({ top: 24, bottom: 18 })
 
       if (this.items.length === 0) {
-        Text('还没有记录')
+        Text(this.t('noRecords'))
           .fontSize(14)
           .fontColor(Tokens.muted)
           .margin({ top: 80 })
@@ -1569,7 +1623,7 @@ struct Index {
                 .alignItems(HorizontalAlign.Start)
 
                 Column() {
-                  Text('下次')
+                  Text(this.t('next'))
                     .fontSize(8)
                     .fontColor(Tokens.mutedSoft)
                   Text(formatShort(item.nextReviewAt))
@@ -1614,12 +1668,12 @@ struct Index {
 
   @Builder CalendarPage() {
     Column() {
-      Text('日历')
+      Text(this.t('calendarTitle'))
         .fontSize(this.isWide ? 44 : 32)
         .fontWeight(FontWeight.Bold)
         .fontColor(Tokens.ink)
         .margin({ top: 24 })
-      Text('接下来 7 天')
+      Text(this.t('next7'))
         .fontSize(11)
         .fontColor(Tokens.muted)
         .margin({ top: 6, bottom: 18 })
@@ -1643,7 +1697,7 @@ struct Index {
 
               Row() {
                 if (day.count === 0) {
-                  Text('没有安排')
+                  Text(this.t('noPlan'))
                     .fontSize(11)
                     .fontColor(Tokens.mutedSoft)
                 } else {
@@ -1697,7 +1751,7 @@ struct Index {
 
   @Builder SettingsPage() {
     Column() {
-      Text('设置')
+      Text(this.t('settingsTitle'))
         .fontSize(this.isWide ? 44 : 32)
         .fontWeight(FontWeight.Bold)
         .fontColor(Tokens.ink)
@@ -1708,11 +1762,11 @@ struct Index {
           Column() {
             Row() {
               Column() {
-                Text('到点提醒我')
+                Text(this.t('remindMe'))
               .fontSize(14)
               .fontWeight(FontWeight.Medium)
               .fontColor(Tokens.ink)
-            Text('每天一次，汇总今天的复习')
+            Text(this.t('reminderSub'))
               .fontSize(9.5)
               .fontColor(Tokens.muted)
               .margin({ top: 3 })
@@ -1728,7 +1782,7 @@ struct Index {
         .width('100%')
 
         Row() {
-          Text('提醒时间')
+          Text(this.t('reminderTime'))
             .fontSize(11)
             .fontColor(Tokens.muted)
           Blank()
@@ -1748,14 +1802,14 @@ struct Index {
         .margin({ top: 16 })
 
         Row() {
-          Text('提醒方式')
+          Text(this.t('reminderMethod'))
             .fontSize(10)
             .fontColor(Tokens.muted)
           Blank()
-          Text(this.reminderMode === 'calendar' ? '系统日历' : (this.reminderMode === 'off' ? '已关闭' : '未安排'))
+          Text(this.reminderMode === 'calendar' ? this.t('systemCalendar') : (this.reminderMode === 'off' ? this.t('off') : this.t('unscheduled')))
             .fontSize(10)
             .fontColor(this.reminderMode === 'calendar' ? '#6E8C4D' : Tokens.mutedSoft)
-          Text('  ·  ' + (this.reminderCount > 0 ? this.reminderCount : 0) + ' 个日程')
+          Text('  ·  ' + this.t('schedules', this.reminderCount > 0 ? this.reminderCount : 0))
             .fontSize(9)
             .fontColor(Tokens.mutedSoft)
         }
@@ -1772,7 +1826,7 @@ struct Index {
             .margin({ top: 6 })
         }
 
-        Button('保存设置')
+        Button(this.t('saveSettings'))
           .width('100%')
           .height(42)
           .fontSize(12)
@@ -1795,7 +1849,7 @@ struct Index {
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
-        Text('页面配色')
+        Text(this.t('palette'))
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.muted)
@@ -1847,7 +1901,44 @@ struct Index {
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
-        Text('科目')
+        Text(this.t('language'))
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.muted)
+          .margin({ bottom: 10 })
+        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+          ForEach(I18n.languages, (option: LanguageOption) => {
+            Button(option.name)
+              .height(30)
+              .fontSize(10)
+              .fontColor(this.settings.language === option.code ? '#3D2A00' : Tokens.inkSoft)
+              .backgroundColor(this.settings.language === option.code ? Tokens.yellow : Tokens.surface)
+              .borderWidth(1)
+              .borderColor(this.settings.language === option.code ? '#CCFFC531' : '#E6DCC8')
+              .borderRadius(15)
+              .padding({ left: 12, right: 12 })
+              .margin({ right: 6, bottom: 6 })
+              .scale({ x: this.settings.language === option.code ? 1.04 : 1, y: this.settings.language === option.code ? 1.04 : 1 })
+              .animation({ duration: 180, curve: Curve.EaseOut })
+              .onClick(() => {
+                this.setLanguage(option.code);
+              })
+          }, (option: LanguageOption) => option.code)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(18)
+      .backgroundColor(Tokens.surfaceSoft)
+      .borderRadius(22)
+      .borderWidth(1)
+      .borderColor('#B3FFFFFF')
+      .translate({ y: (1 - this.calendarProgress) * 18 })
+      .opacity(Math.min(1, this.calendarProgress))
+
+      Column() {
+        Text(this.t('subject'))
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.muted)
@@ -1895,7 +1986,7 @@ struct Index {
             .onChange((value: string) => {
               this.newSubjectName = value;
             })
-          Button('添加')
+          Button(this.t('addSubject'))
             .height(36)
             .fontSize(11)
             .fontWeight(FontWeight.Medium)
@@ -1922,7 +2013,7 @@ struct Index {
       .translate({ y: (1 - this.calendarProgress) * 20 })
       .opacity(Math.min(1, this.calendarProgress))
 
-      Text('所有数据只保存在本机，不上传，也不需要账号。')
+      Text(this.t('footer'))
         .fontSize(9)
         .fontColor(Tokens.mutedSoft)
         .margin({ top: 18 })
@@ -1948,13 +2039,13 @@ struct Index {
 
   @Builder BottomNav() {
     Row() {
-      ForEach(this.navLabels, (label: string, index: number) => {
+      ForEach([0, 1, 2, 3], (index: number) => {
         Column() {
           Image(this.tab === index ? this.navIconsOn[index] : this.navIconsOff[index])
             .width(21)
             .height(21)
             .objectFit(ImageFit.Contain)
-          Text(label)
+          Text(this.navLabel(index))
             .fontSize(8)
             .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
             .margin({ top: 3 })
@@ -2024,7 +2115,7 @@ struct Index {
           .fontSize(10)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.muted)
-        Text('第 ' + (this.reviewItem.reviewCount + 1) + ' 次')
+        Text(this.t('reviewN', this.reviewItem.reviewCount + 1))
           .fontSize(9)
           .fontColor(Tokens.mutedSoft)
           .margin({ left: 8 })
@@ -2032,7 +2123,7 @@ struct Index {
         Text((this.reviewItem.reviewCount + 1) + ' / 06')
           .fontSize(9)
           .fontColor(Tokens.mutedSoft)
-        Button('关闭')
+        Button(this.t('close'))
           .height(26)
           .fontSize(9)
           .fontColor('#6C4B00')
@@ -2053,7 +2144,7 @@ struct Index {
         .fontColor(Tokens.ink)
         .letterSpacing(-1)
         .margin({ top: 14 })
-      Text('上次复习 ' + formatShort(this.reviewItem.lastReviewedAt > 0 ? this.reviewItem.lastReviewedAt : this.reviewItem.createdAt))
+      Text(this.t('lastReview', formatShort(this.reviewItem.lastReviewedAt > 0 ? this.reviewItem.lastReviewedAt : this.reviewItem.createdAt)))
         .width('100%')
         .fontSize(10.5)
         .fontColor(Tokens.muted)
@@ -2065,20 +2156,20 @@ struct Index {
         .backgroundColor(Tokens.line)
         .margin({ top: 22, bottom: 18 })
 
-      Text('这次记得怎么样？')
+      Text(this.t('howRemember'))
         .width('100%')
         .fontSize(11)
         .fontColor(Tokens.muted)
-      Text('选择后自动安排下次')
+      Text(this.t('autoNext'))
         .width('100%')
         .fontSize(8)
         .fontColor(Tokens.mutedSoft)
         .margin({ top: 4, bottom: 12 })
 
       Row({ space: 8 }) {
-        this.RateButton('忘了', this.intervalHint('forgot'), 'forgot', '#D95F3F')
-        this.RateButton('模糊', this.intervalHint('fuzzy'), 'fuzzy', '#B17A12')
-        this.RateButton('记得', this.intervalHint('got'), 'got', '#8F5600')
+        this.RateButton(this.t('forgot'), this.intervalHint('forgot'), 'forgot', '#D95F3F')
+        this.RateButton(this.t('fuzzy'), this.intervalHint('fuzzy'), 'fuzzy', '#B17A12')
+        this.RateButton(this.t('got'), this.intervalHint('got'), 'got', '#8F5600')
       }
       .width('100%')
     }
@@ -2117,12 +2208,12 @@ struct Index {
 
   @Builder CurvePanel() {
     Column() {
-      Text('记忆曲线')
+      Text(this.t('memoryCurve'))
         .fontSize(28)
         .fontWeight(FontWeight.Bold)
         .fontColor(Tokens.ink)
         .letterSpacing(-0.6)
-      Text('第 ' + (this.reviewItem.reviewCount + 1) + ' 次复习 · 间隔 ' + this.reviewItem.currentIntervalDays + ' 天')
+      Text(this.t('reviewInterval', this.reviewItem.reviewCount + 1, this.reviewItem.currentIntervalDays))
         .fontSize(10.5)
         .fontColor(Tokens.muted)
         .margin({ top: 6, bottom: 16 })
@@ -2165,13 +2256,13 @@ struct Index {
       Row() {
         Row() {
           Circle({ width: 5, height: 5 }).fill(Tokens.orange)
-          Text('上次 ' + this.lastRating(this.reviewItem.id))
+          Text(this.t('lastPrefix', this.lastRating(this.reviewItem.id)))
             .fontSize(9)
             .fontColor(Tokens.muted)
             .margin({ left: 6 })
         }
         Blank()
-        Text(this.lastInterval(this.reviewItem.id) + ' 天  →  ' + this.reviewItem.currentIntervalDays + ' 天')
+        Text(this.t('days', this.lastInterval(this.reviewItem.id)) + '  →  ' + this.t('days', this.reviewItem.currentIntervalDays))
           .fontSize(9)
           .fontColor(Tokens.muted)
       }
@@ -2212,7 +2303,7 @@ struct Index {
           .lineHeight(18)
           .width('100%')
           .margin({ top: 10, bottom: 18 })
-        Button(this.confirmKind === 'subject' ? '删除科目' : '删除记录')
+        Button(this.confirmKind === 'subject' ? this.t('deleteSubjectTitle') : this.t('deleteRecordTitle'))
           .width('100%')
           .height(46)
           .fontSize(13)
@@ -2223,7 +2314,7 @@ struct Index {
           .onClick(() => {
             this.executeConfirm();
           })
-        Button('取消')
+        Button(this.t('cancel'))
           .width('100%')
           .height(38)
           .fontSize(12)
@@ -2260,11 +2351,11 @@ struct Index {
 
       Column() {
         Row() {
-          Text(this.actionMode === 'view' ? '记录' : '修改记录')
+          Text(this.actionMode === 'view' ? this.t('detailRecord') : this.t('editRecord'))
             .fontSize(11)
             .fontColor(Tokens.muted)
           Blank()
-          Button('关闭')
+          Button(this.t('close'))
             .height(28)
             .fontSize(9)
             .fontColor('#6C4B00')
@@ -2286,7 +2377,7 @@ struct Index {
           .width('100%')
           .margin({ top: 16 })
 
-        Text(this.findSubject(this.actionItem.subjectId).name + '  ·  下次 ' + formatShort(this.actionItem.nextReviewAt))
+        Text(this.findSubject(this.actionItem.subjectId).name + '  ·  ' + this.t('next') + ' ' + formatShort(this.actionItem.nextReviewAt))
           .fontSize(10)
           .fontColor(Tokens.muted)
           .width('100%')
@@ -2294,7 +2385,7 @@ struct Index {
 
         Row() {
           Column() {
-            Text('创建')
+            Text(this.t('created'))
               .fontSize(8)
               .fontColor(Tokens.mutedSoft)
             Text(formatShort(this.actionItem.createdAt))
@@ -2305,10 +2396,10 @@ struct Index {
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
           Column() {
-            Text('已复习')
+            Text(this.t('reviewed'))
               .fontSize(8)
               .fontColor(Tokens.mutedSoft)
-            Text(this.actionItem.reviewCount + ' 次')
+            Text(this.t('times', this.actionItem.reviewCount))
               .fontSize(11)
               .fontColor(Tokens.inkSoft)
               .margin({ top: 3 })
@@ -2316,10 +2407,10 @@ struct Index {
           .layoutWeight(1)
           .alignItems(HorizontalAlign.Start)
           Column() {
-            Text('当前间隔')
+            Text(this.t('currentInterval'))
               .fontSize(8)
               .fontColor(Tokens.mutedSoft)
-            Text(this.actionItem.currentIntervalDays + ' 天')
+            Text(this.t('days', this.actionItem.currentIntervalDays))
               .fontSize(11)
               .fontColor(Tokens.inkSoft)
               .margin({ top: 3 })
@@ -2341,7 +2432,7 @@ struct Index {
 
         if (this.actionMode === 'view') {
           Row({ space: 10 }) {
-            Button('修改')
+            Button(this.t('modify'))
               .layoutWeight(1)
               .height(44)
               .fontSize(12)
@@ -2352,7 +2443,7 @@ struct Index {
               .onClick(() => {
                 this.startEditItem();
               })
-            Button('删除')
+            Button(this.t('deleteAction'))
               .layoutWeight(1)
               .height(44)
               .fontSize(12)
@@ -2366,7 +2457,7 @@ struct Index {
           }
           .width('100%')
         } else {
-          Text('标题')
+          Text(this.t('titleLabel'))
             .fontSize(9)
             .fontColor(Tokens.muted)
             .width('100%')
@@ -2384,7 +2475,7 @@ struct Index {
               this.editTitle = value;
             })
 
-          Text('科目')
+          Text(this.t('subject'))
             .fontSize(9)
             .fontColor(Tokens.muted)
             .width('100%')
@@ -2412,7 +2503,7 @@ struct Index {
           .margin({ top: 5 })
 
           Row({ space: 10 }) {
-            Button('取消')
+            Button(this.t('cancel'))
               .layoutWeight(1)
               .height(42)
               .fontSize(12)
@@ -2422,7 +2513,7 @@ struct Index {
               .onClick(() => {
                 this.changeActionMode('view');
               })
-            Button('保存')
+            Button(this.t('save'))
               .layoutWeight(1)
               .height(42)
               .fontSize(12)

@@ -20,6 +20,9 @@ export class Store {
       if (typeof parsed.settings.themeIndex !== 'number') {
         parsed.settings.themeIndex = 0;
       }
+      if (typeof parsed.settings.language !== 'string') {
+        parsed.settings.language = 'zh';
+      }
       for (let i = 0; i < parsed.subjects.length; i++) {
         const subject = parsed.subjects[i];
         if (subject.id === 'math') {

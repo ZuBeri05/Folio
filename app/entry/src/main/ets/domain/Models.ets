@@ -49,6 +49,7 @@ export interface Settings {
   reminderTime: string;
   subjectTimes: SubjectTime[];
   themeIndex: number;
+  language: string;
 }
 
 export interface AppData {
@@ -106,7 +107,8 @@ export function createDefaultData(): AppData {
       reminderEnabled: true,
       reminderTime: '20:00',
       subjectTimes: [],
-      themeIndex: 0
+      themeIndex: 0,
+      language: 'zh'
     }
   };
 }
