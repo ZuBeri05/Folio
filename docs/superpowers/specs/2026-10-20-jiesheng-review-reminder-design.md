@@ -240,7 +240,7 @@
 - 纯 ArkTS + ArkUI 原生，不使用 WebView。
 - Stage 模型，单 HAP 模块，API 26。
 - 状态管理：V1 稳定写法（@State / @Observed / @ObjectLink），避免首版引入 V2 迁移风险。
-- 本地数据库：@kit.ArkData 的 relationalStore（SQLite）。
+- 本地持久化：@kit.ArkData 的 preferences（JSON）。首版数据量小；记录数增长到数千条后再迁移 relationalStore。
 - 提醒：@kit.BackgroundTasksKit + @kit.NotificationKit。
 - 导航：Navigation + NavPathStack。
 - 响应式：onAreaChange / 窗口宽度断点 840vp。
@@ -263,16 +263,16 @@ entry/src/main/ets/
   components/EmptyState.ets
   domain/models.ets
   domain/scheduling.ets
-  data/Database.ets
-  data/ItemRepository.ets
-  data/SettingsRepository.ets
+  data/Store.ets
   services/ReminderService.ets
   services/NotificationPermission.ets
   theme/Tokens.ets
   utils/date.ets
 ~~~
 
-### 7.3 数据库
+### 7.3 数据结构
+
+首版用 preferences 保存等价 JSON；以下 SQL 是后续迁移到 relationalStore 时的目标结构。
 
 ~~~sql
 CREATE TABLE subjects (
@@ -314,11 +314,11 @@ CREATE INDEX idx_logs_item ON review_logs(item_id, reviewed_at DESC);
 ### 7.4 关键接口
 
 - Scheduling.next(item, rating, now): ReviewResult
-- ItemRepository.listDue(now): Item[]
-- ItemRepository.create(input): Item
-- ItemRepository.completeReview(itemId, rating, now): ReviewResult
-- ReminderService.sync(settings, subjects): Promise<void>
-- ReminderService.requestPermission(): Promise<boolean>
+- Scheduling.firstReviewAt(mode, fixedDays, now): number
+- Store.load(context): Promise<AppData>
+- Store.save(context, data): Promise<void>
+- ReminderService.sync(context, settings): Promise<void>
+- ReminderService.requestPermission(context): Promise<boolean>
 
 ### 7.5 错误与空状态
 
