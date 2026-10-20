@@ -56,6 +56,7 @@ struct Index {
   @State editSubjectId: string = '';
   @State actionScale: number = 1;
   @State actionContentOpacity: number = 1;
+  @State actionOverlayOpacity: number = 1;
   @State showConfirm: boolean = false;
   @State confirmTitle: string = '';
   @State confirmMessage: string = '';
@@ -547,6 +548,7 @@ struct Index {
     this.actionMode = 'view';
     this.showItemActions = true;
     this.actionContentOpacity = 1;
+    this.actionOverlayOpacity = 1;
     this.actionScale = 0.9;
     animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
       this.actionScale = 1;
@@ -554,7 +556,19 @@ struct Index {
   }
 
   private closeItemActions(): void {
-    this.showItemActions = false;
+    if (!this.showItemActions) {
+      return;
+    }
+    animateTo({ duration: 180, curve: Curve.EaseIn }, () => {
+      this.actionOverlayOpacity = 0;
+      this.actionScale = 0.94;
+    });
+    setTimeout(() => {
+      this.showItemActions = false;
+      this.actionOverlayOpacity = 1;
+      this.actionScale = 1;
+      this.actionContentOpacity = 1;
+    }, 190);
   }
 
   private startEditItem(): void {
@@ -2436,6 +2450,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .opacity(this.actionOverlayOpacity)
   }
 
   @Builder ComposerOverlay() {
