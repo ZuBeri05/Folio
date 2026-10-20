@@ -53,10 +53,29 @@ struct Index {
   @State editSubjectId: string = '';
   @State actionScale: number = 1;
   @State actionContentOpacity: number = 1;
+  @State showConfirm: boolean = false;
+  @State confirmTitle: string = '';
+  @State confirmMessage: string = '';
+  @State confirmKind: string = '';
+  @State confirmSubjectId: string = '';
+  @State confirmItemId: string = '';
+  @State confirmScale: number = 1;
   private reviewBusy: boolean = false;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
   private readonly navLabels: string[] = ['今日', '记录', '日历', '设置'];
+  private readonly navIconsOn: Resource[] = [
+    $r('app.media.ic_home_on'),
+    $r('app.media.ic_records_on'),
+    $r('app.media.ic_calendar_on'),
+    $r('app.media.ic_settings_on')
+  ];
+  private readonly navIconsOff: Resource[] = [
+    $r('app.media.ic_home_off'),
+    $r('app.media.ic_records_off'),
+    $r('app.media.ic_calendar_off'),
+    $r('app.media.ic_settings_off')
+  ];
   private readonly curveNodes: number[] = [0, 1, 2, 3, 4, 5];
 
   aboutToAppear(): void {
@@ -456,6 +475,12 @@ struct Index {
     return palettes[safe];
   }
 
+  private themeAccent(index: number): string {
+    const accents: string[] = ['#E8A21A', '#6E9BC5', '#D9826B', '#7FA88B'];
+    const safe = index >= 0 && index < accents.length ? index : 0;
+    return accents[safe];
+  }
+
   private pageBg(): string {
     const colors = this.pageColors(this.settings.themeIndex);
     const index = this.tab >= 0 && this.tab < colors.length ? this.tab : 0;
@@ -566,6 +591,17 @@ struct Index {
       this.toast('这个科目下还有 ' + used + ' 条记录');
       return;
     }
+    this.confirmTitle = '删除科目';
+    this.confirmMessage = '确定删除「' + subject.name + '」吗？删除后不可恢复。';
+    this.confirmKind = 'subject';
+    this.confirmSubjectId = subject.id;
+    this.confirmItemId = '';
+    this.showConfirm = true;
+    this.confirmScale = 0.94;
+    animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
+      this.confirmScale = 1;
+    });
+    return;
     AlertDialog.show({
       title: '删除科目？',
       message: subject.name,
@@ -589,10 +625,43 @@ struct Index {
     });
   }
 
-  private deleteFromAction(): void {
-    const id = this.actionItem.id;
+  private askDeleteRecord(item: StudyItem): void {
+    this.confirmTitle = '删除记录';
+    this.confirmMessage = '确定删除「' + item.title + '」吗？这条记录的复习日志也会一起删除。';
+    this.confirmKind = 'record';
+    this.confirmItemId = item.id;
+    this.confirmSubjectId = '';
     this.showItemActions = false;
-    this.deleteItem(id);
+    this.showConfirm = true;
+    this.confirmScale = 0.94;
+    animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
+      this.confirmScale = 1;
+    });
+  }
+
+  private cancelConfirm(): void {
+    this.showConfirm = false;
+  }
+
+  private executeConfirm(): void {
+    const kind = this.confirmKind;
+    const subjectId = this.confirmSubjectId;
+    const itemId = this.confirmItemId;
+    this.showConfirm = false;
+    if (kind === 'subject') {
+      this.subjects = this.subjects.filter((value: Subject) => value.id !== subjectId);
+      if (this.draftSubjectId === subjectId && this.subjects.length > 0) {
+        this.draftSubjectId = this.subjects[0].id;
+      }
+      this.persist();
+      this.toast('已删除科目');
+    } else if (kind === 'record') {
+      this.deleteItem(itemId);
+    }
+  }
+
+  private deleteFromAction(): void {
+    this.askDeleteRecord(this.actionItem);
   }
 
   private deleteItem(id: string): void {
@@ -642,7 +711,7 @@ struct Index {
           setTimeout(() => {
             animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
               const rebound = this.calendarX.slice();
-              rebound[i] = 10;
+              rebound[i] = 4;
               this.calendarX = rebound;
             });
             setTimeout(() => {
@@ -690,6 +759,9 @@ struct Index {
       }
       if (this.showItemActions) {
         this.ItemActionsOverlay()
+      }
+      if (this.showConfirm) {
+        this.ConfirmOverlay()
       }
     }
     .width('100%')
@@ -765,7 +837,7 @@ struct Index {
 
       Column({ space: 9 }) {
         ForEach(this.navLabels, (label: string, index: number) => {
-          this.NavItem(index, this.navGlyphs[index], label)
+          this.NavItem(index, label)
         })
       }
       .width(64)
@@ -783,13 +855,12 @@ struct Index {
     .animation({ duration: 320, curve: Curve.EaseOut })
   }
 
-  @Builder NavItem(index: number, glyph: string, label: string) {
+  @Builder NavItem(index: number, label: string) {
     Column() {
-      Text(glyph)
-        .fontSize(17)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.tab === index ? '#6C4B00' : Tokens.muted)
-        .animation({ duration: 180, curve: Curve.EaseOut })
+      Image(this.tab === index ? this.navIconsOn[index] : this.navIconsOff[index])
+        .width(21)
+        .height(21)
+        .objectFit(ImageFit.Contain)
       Text(label)
         .fontSize(9)
         .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
@@ -1161,11 +1232,10 @@ struct Index {
         .caretColor(Tokens.orange)
         .backgroundColor(Tokens.surface)
         .borderWidth(1)
-        .borderColor(this.titleFocused ? '#CCFFC531' : '#B3FFFFFF')
+        .borderColor(this.titleFocused ? '#C9A24A' : '#B3FFFFFF')
         .borderRadius(14)
         .padding({ left: 14, right: 14 })
-        .scale({ x: this.titleFocused ? 1.006 : 1, y: this.titleFocused ? 1.006 : 1 })
-        .animation({ duration: 220, curve: Curve.EaseOut })
+        .animation({ duration: 180, curve: Curve.EaseOut })
         .onFocus(() => {
           this.titleFocused = true;
         })
@@ -1182,13 +1252,21 @@ struct Index {
         .margin({ top: 18, bottom: 8 })
 
       Stack({ alignContent: Alignment.Start }) {
+        Row()
+          .width('50%')
+          .height(32)
+          .backgroundColor(Tokens.surface)
+          .borderRadius(9)
+          .translate({ x: this.draftMode === 'curve' ? 0 : '100%' })
+          .animation({ duration: 220, curve: Curve.EaseOut })
+
         Row() {
           Button('遗忘曲线')
             .layoutWeight(1)
             .height(32)
             .fontSize(11)
             .fontColor(this.draftMode === 'curve' ? Tokens.ink : Tokens.muted)
-            .backgroundColor(this.draftMode === 'curve' ? Tokens.surface : Color.Transparent)
+            .backgroundColor(Color.Transparent)
             .borderRadius(9)
             .animation({ duration: 180, curve: Curve.EaseOut })
             .onClick(() => {
@@ -1200,7 +1278,7 @@ struct Index {
             .height(32)
             .fontSize(11)
             .fontColor(this.draftMode === 'fixed' ? Tokens.ink : Tokens.muted)
-            .backgroundColor(this.draftMode === 'fixed' ? Tokens.surface : Color.Transparent)
+            .backgroundColor(Color.Transparent)
             .borderRadius(9)
             .animation({ duration: 180, curve: Curve.EaseOut })
             .onClick(() => {
@@ -1247,12 +1325,14 @@ struct Index {
             .fontSize(11)
             .fontColor(Tokens.muted)
           Button('-')
-            .width(30)
-            .height(30)
+            .width(32)
+            .height(32)
             .fontSize(16)
-            .fontColor(Tokens.inkSoft)
-            .backgroundColor(Tokens.surface)
-            .borderRadius(15)
+            .fontColor('#6C4B00')
+            .backgroundColor(Tokens.yellowSoft)
+            .borderWidth(1)
+            .borderColor('#E3C98F')
+            .borderRadius(16)
             .margin({ left: 10, right: 8 })
             .onClick(() => {
               this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
@@ -1278,12 +1358,14 @@ struct Index {
             .fontColor(Tokens.muted)
             .margin({ left: 4 })
           Button('+')
-            .width(30)
-            .height(30)
+            .width(32)
+            .height(32)
             .fontSize(16)
-            .fontColor(Tokens.inkSoft)
-            .backgroundColor(Tokens.surface)
-            .borderRadius(15)
+            .fontColor('#6C4B00')
+            .backgroundColor(Tokens.yellowSoft)
+            .borderWidth(1)
+            .borderColor('#E3C98F')
+            .borderRadius(16)
             .margin({ left: 8 })
             .onClick(() => {
               this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
@@ -1660,25 +1742,33 @@ struct Index {
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.muted)
-        Row() {
+        Row({ space: 8 }) {
           ForEach(['奶油', '雾蓝', '暖砂', '鼠尾草'], (name: string, index: number) => {
             Column() {
-              Row({ space: 3 }) {
-                ForEach([0, 1, 2, 3], (slot: number) => {
-                  Circle({ width: 13, height: 13 })
-                    .fill(this.pageColors(index)[slot])
-                    .stroke(this.settings.themeIndex === index ? '#80FFC531' : Tokens.line)
-                    .strokeWidth(1)
-                })
+              Row({ space: 6 }) {
+                Row()
+                  .width(26)
+                  .height(26)
+                  .backgroundColor(this.themeAccent(index))
+                  .borderRadius(8)
+                Row({ space: 3 }) {
+                  ForEach([0, 1, 2, 3], (slot: number) => {
+                    Circle({ width: 13, height: 13 })
+                      .fill(this.pageColors(index)[slot])
+                      .stroke('#44000000')
+                      .strokeWidth(1)
+                  })
+                }
               }
             }
             .layoutWeight(1)
-            .padding({ top: 8, bottom: 8 })
-            .backgroundColor(this.settings.themeIndex === index ? Tokens.surface : Color.Transparent)
-            .borderRadius(10)
-            .borderWidth(1)
-            .borderColor(this.settings.themeIndex === index ? '#CCFFC531' : Color.Transparent)
-            .scale({ x: this.settings.themeIndex === index ? 1.03 : 1, y: this.settings.themeIndex === index ? 1.03 : 1 })
+            .height(46)
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor(Tokens.surface)
+            .borderRadius(12)
+            .borderWidth(this.settings.themeIndex === index ? 2 : 1)
+            .borderColor(this.settings.themeIndex === index ? '#E8A21A' : '#E6DCC8')
+            .scale({ x: this.settings.themeIndex === index ? 1.02 : 1, y: this.settings.themeIndex === index ? 1.02 : 1 })
             .animation({ duration: 240, curve: Curve.EaseOut })
             .onClick(() => {
               this.updateTheme(index);
@@ -1686,6 +1776,7 @@ struct Index {
           }, (name: string, index: number) => name)
         }
         .width('100%')
+        .margin({ top: 10 })
         .margin({ top: 10 })
       }
       .width('100%')
@@ -1740,6 +1831,8 @@ struct Index {
             .fontColor(Tokens.ink)
             .placeholderColor(Tokens.mutedSoft)
             .backgroundColor(Tokens.surface)
+            .borderWidth(1)
+            .borderColor('#E6DCC8')
             .borderRadius(10)
             .padding({ left: 12, right: 12 })
             .onChange((value: string) => {
@@ -1800,11 +1893,10 @@ struct Index {
     Row() {
       ForEach(this.navLabels, (label: string, index: number) => {
         Column() {
-          Text(this.navGlyphs[index])
-            .fontSize(17)
-            .fontWeight(this.tab === index ? FontWeight.Bold : FontWeight.Medium)
-            .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-            .animation({ duration: 180, curve: Curve.EaseOut })
+          Image(this.tab === index ? this.navIconsOn[index] : this.navIconsOff[index])
+            .width(21)
+            .height(21)
+            .objectFit(ImageFit.Contain)
           Text(label)
             .fontSize(8)
             .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
@@ -2038,6 +2130,64 @@ struct Index {
     .borderRadius(22)
     .borderWidth(1)
     .borderColor('#FFFFFF')
+  }
+
+  @Builder ConfirmOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Tokens.dim)
+        .backdropBlur(6)
+        .onClick(() => {
+          this.cancelConfirm();
+        })
+
+      Column() {
+        Text(this.confirmTitle)
+          .fontSize(22)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.ink)
+          .width('100%')
+        Text(this.confirmMessage)
+          .fontSize(11)
+          .fontColor(Tokens.muted)
+          .lineHeight(18)
+          .width('100%')
+          .margin({ top: 10, bottom: 18 })
+        Button(this.confirmKind === 'subject' ? '删除科目' : '删除记录')
+          .width('100%')
+          .height(46)
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#3D2A00')
+          .backgroundColor(Tokens.yellow)
+          .borderRadius(14)
+          .onClick(() => {
+            this.executeConfirm();
+          })
+        Button('取消')
+          .width('100%')
+          .height(38)
+          .fontSize(12)
+          .fontColor(Tokens.muted)
+          .backgroundColor(Color.Transparent)
+          .margin({ top: 4 })
+          .onClick(() => {
+            this.cancelConfirm();
+          })
+      }
+      .width(this.isWide ? 440 : '88%')
+      .padding(24)
+      .backgroundColor(Tokens.surface)
+      .borderRadius(24)
+      .borderWidth(1)
+      .borderColor('#CCFFFFFF')
+      .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
+      .scale({ x: this.confirmScale, y: this.confirmScale })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder ItemActionsOverlay() {
