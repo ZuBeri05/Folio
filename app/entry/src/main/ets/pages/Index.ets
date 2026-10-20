@@ -29,6 +29,7 @@ struct Index {
   @State dotVisible: number = 6;
   @State formProgress: number = 1;
   @State titleFocused: boolean = false;
+  @State titleBorderColor: string = '#B3FFFFFF';
   @State todayLabel: string = '';
   @State reviewScale: number = 0.97;
   @State isTablet: boolean = false;
@@ -1233,15 +1234,21 @@ struct Index {
         .caretColor(Tokens.orange)
         .backgroundColor(Tokens.surface)
         .borderWidth(1)
-        .borderColor(this.titleFocused ? '#C9A24A' : '#B3FFFFFF')
+        .borderColor(this.titleBorderColor)
         .borderRadius(14)
         .padding({ left: 14, right: 14 })
         .focusBox({ margin: LengthMetrics.vp(0), strokeWidth: LengthMetrics.vp(0) })
         .onFocus(() => {
           this.titleFocused = true;
+          animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+            this.titleBorderColor = '#C9A24A';
+          });
         })
         .onBlur(() => {
           this.titleFocused = false;
+          animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+            this.titleBorderColor = '#B3FFFFFF';
+          });
         })
         .onChange((value: string) => {
           this.draftTitle = value;
