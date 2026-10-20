@@ -1325,22 +1325,22 @@ struct Index {
           Text('每')
             .fontSize(11)
             .fontColor(Tokens.muted)
-          Text('−')
-            .width(26)
-            .height(26)
-            .lineHeight(26)
-            .fontSize(16)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#6C4B00')
-            .textAlign(TextAlign.Center)
-            .backgroundColor('#FBF4E5')
-            .borderWidth(1)
-            .borderColor('#DCC49A')
-            .borderRadius(13)
-            .margin({ left: 10, right: 8 })
-            .onClick(() => {
-              this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
-            })
+          Stack({ alignContent: Alignment.Center }) {
+            Text('−')
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#6C4B00')
+          }
+          .width(26)
+          .height(26)
+          .backgroundColor('#FBF4E5')
+          .borderWidth(1)
+          .borderColor('#DCC49A')
+          .borderRadius(13)
+          .margin({ left: 10, right: 8 })
+          .onClick(() => {
+            this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
+          })
           TextInput({ text: this.draftFixedDays + '' })
             .width(52)
             .height(30)
@@ -1361,22 +1361,22 @@ struct Index {
             .fontSize(11)
             .fontColor(Tokens.muted)
             .margin({ left: 4 })
-          Text('+')
-            .width(26)
-            .height(26)
-            .lineHeight(26)
-            .fontSize(16)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#6C4B00')
-            .textAlign(TextAlign.Center)
-            .backgroundColor('#FBF4E5')
-            .borderWidth(1)
-            .borderColor('#DCC49A')
-            .borderRadius(13)
-            .margin({ left: 8 })
-            .onClick(() => {
-              this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
-            })
+          Stack({ alignContent: Alignment.Center }) {
+            Text('+')
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#6C4B00')
+          }
+          .width(26)
+          .height(26)
+          .backgroundColor('#FBF4E5')
+          .borderWidth(1)
+          .borderColor('#DCC49A')
+          .borderRadius(13)
+          .margin({ left: 8 })
+          .onClick(() => {
+            this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
+          })
         }
         .width('100%')
         .margin({ top: 10 })
