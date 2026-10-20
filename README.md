@@ -1,4 +1,4 @@
-# 结绳 · HarmonyOS 7 复习提醒
+# Folio · HarmonyOS 7 复习提醒
 
 一个只做三件事的本地复习提醒 App：
 
@@ -13,7 +13,7 @@
 - 已编译、已签名、已安装到 HUAWEI MatePad 11.5 S。
 - App 包名：com.jiesheng.review
 - 安装包：dist/jiesheng-debug.hap
-- 桌面副本：C:\Users\33065\Desktop\结绳-debug.hap
+- 桌面副本：C:\Users\33065\Desktop\Folio-debug.hap
 - 设计预览：design/home.html、design/review.html
 - 设计文档：docs/superpowers/specs/2026-10-20-jiesheng-review-reminder-design.md
 - 真机截图：design/jiesheng-launch2.png、design/jiesheng-composer-final.png
@@ -130,7 +130,7 @@ app/
 
 ## 已知说明
 
-- 平板最后处于锁屏状态，清理数据后没有再次启动；解锁后打开桌面上的「结绳」即可。
+- 平板最后处于锁屏状态，清理数据后没有再次启动；解锁后打开桌面上的「Folio」即可。
 - 首次添加记录或首次打开时，系统会请求日历权限；允许后设置页会显示「系统日历 · 1 个日程」。
 - 如果拒绝日历权限，App 内仍可记录和查看，但不会有关闭 App 后的系统提醒；设置页会显示原因。
 - 当前记录数以首页为准。旧版的「清空所有记录」已移除；点击记录看详情，长按记录管理；科目用右侧 × 删除。

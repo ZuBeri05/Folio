@@ -2,7 +2,7 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "结绳复习提醒"
+      "value": "Folio 复习提醒"
     },
     {
       "name": "EntryAbility_desc",
@@ -10,7 +10,7 @@
     },
     {
       "name": "EntryAbility_label",
-      "value": "结绳"
+      "value": "Folio"
     },
     {
       "name": "reason_calendar",

@@ -66,8 +66,8 @@ export class ReminderService {
     const end = new Date(start.getTime() + 15 * 60 * 1000);
 
     const event: calendarManager.Event = {
-      title: '结绳 · 复习提醒',
-      description: '打开结绳，看看今天要复习的内容。',
+      title: 'Folio · 复习提醒',
+      description: '打开 Folio，看看今天要复习的内容。',
       type: calendarManager.EventType.NORMAL,
       startTime: start.getTime(),
       endTime: end.getTime(),
