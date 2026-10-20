@@ -25,6 +25,8 @@ struct Index {
   @State newSubjectName: string = '';
   @State calendarProgress: number = 1;
   @State dotVisible: number = 6;
+  @State formProgress: number = 1;
+  @State titleFocused: boolean = false;
   @State todayLabel: string = '';
   @State reviewScale: number = 0.97;
   @State isTablet: boolean = false;
@@ -72,6 +74,7 @@ struct Index {
     }
     this.playEntry();
     this.playDots();
+    this.playForm();
     this.refreshNotificationState();
     if (this.settings.reminderEnabled && this.items.length > 0) {
       this.syncReminder();
@@ -80,9 +83,9 @@ struct Index {
 
   private playEntry(): void {
     this.listOpacity = 0;
-    this.listShift = 16;
+    this.listShift = 24;
     setTimeout(() => {
-      animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 480, curve: Curve.EaseOut }, () => {
         this.listOpacity = 1;
         this.listShift = 0;
       });
@@ -106,11 +109,12 @@ struct Index {
   private openComposer(): void {
     this.showComposer = true;
     this.playDots();
+    this.playForm();
     this.composerScale = 0.92;
     this.composerShift = 24;
     this.composerOpacity = 0;
     this.composerDim = 0;
-    animateTo({ duration: 360, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
       this.composerScale = 1;
       this.composerShift = 0;
       this.composerOpacity = 1;
@@ -119,7 +123,7 @@ struct Index {
   }
 
   private closeComposer(): void {
-    animateTo({ duration: 180, curve: Curve.EaseIn }, () => {
+    animateTo({ duration: 220, curve: Curve.EaseIn }, () => {
       this.composerScale = 0.96;
       this.composerShift = 10;
       this.composerOpacity = 0;
@@ -131,7 +135,7 @@ struct Index {
       this.composerShift = 0;
       this.composerOpacity = 1;
       this.composerDim = 0;
-    }, 180);
+    }, 220);
   }
 
   private persist(): void {
@@ -212,24 +216,25 @@ struct Index {
       return;
     }
     const forward = next > this.tab;
-    animateTo({ duration: 80, curve: Curve.EaseIn }, () => {
+    animateTo({ duration: 100, curve: Curve.EaseIn }, () => {
       this.pageOpacity = 0;
       this.pageShift = 0;
     });
     setTimeout(() => {
       this.tab = next;
       this.pageOpacity = 0;
-      this.pageShift = next === 2 ? 0 : 14;
-      animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
+      this.pageShift = next === 2 ? 0 : 18;
+      animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
         this.pageOpacity = 1;
         this.pageShift = 0;
       });
       if (next === 0) {
         this.playEntry();
         this.playDots();
+        this.playForm();
       }
       this.playCalendar();
-    }, 80);
+    }, 100);
   }
 
   private itemSubtitle(item: StudyItem): string {
@@ -451,8 +456,8 @@ struct Index {
     this.editSubjectId = item.subjectId;
     this.actionMode = 'view';
     this.showItemActions = true;
-    this.actionScale = 0.94;
-    animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+    this.actionScale = 0.9;
+    animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
       this.actionScale = 1;
     });
   }
@@ -510,30 +515,37 @@ struct Index {
     this.toast('已删除');
   }
 
+  private playForm(): void {
+    this.formProgress = 0;
+    animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
+      this.formProgress = 1;
+    });
+  }
+
   private playDots(): void {
     this.dotVisible = 0;
     for (let i = 0; i < 6; i++) {
       setTimeout(() => {
         this.dotVisible = i + 1;
-      }, i * 70);
+      }, i * 90);
     }
   }
 
   private playCalendar(): void {
     this.calendarProgress = 0;
-    animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
       this.calendarProgress = 1;
     });
     setTimeout(() => {
-      animateTo({ duration: 80, curve: Curve.EaseOut }, () => {
-        this.calendarProgress = 0.92;
+      animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+        this.calendarProgress = 0.9;
       });
-    }, 250);
+    }, 300);
     setTimeout(() => {
-      animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 1;
       });
-    }, 330);
+    }, 400);
   }
 
   build() {
@@ -632,7 +644,7 @@ struct Index {
           .borderWidth(1)
           .borderColor('#B3FFD45E')
           .translate({ y: this.tab * 67 })
-          .animation({ duration: 180, curve: Curve.EaseOut })
+          .animation({ duration: 220, curve: Curve.EaseOut })
 
         Column({ space: 9 }) {
           ForEach(this.navLabels, (label: string, index: number) => {
@@ -740,7 +752,7 @@ struct Index {
                 this.ReviewRow(item)
               }
               .width('100%')
-              .translate({ x: (1 - this.calendarProgress) * (30 + index * 8) })
+              .translate({ x: (1 - this.calendarProgress) * (50 + index * 10) })
               .opacity(Math.min(1, this.calendarProgress))
             }, (item: StudyItem) => item.id)
           }
@@ -852,7 +864,7 @@ struct Index {
         .borderRadius(16)
         .borderWidth(1)
         .borderColor('#B3FFFFFF')
-        .translate({ x: (1 - this.calendarProgress) * (30 + index * 8) })
+        .translate({ x: (1 - this.calendarProgress) * (50 + index * 10) })
         .opacity(Math.min(1, this.calendarProgress))
         .gesture(LongPressGesture().onAction(() => {
           this.openItemActions(item);
@@ -1003,6 +1015,8 @@ struct Index {
             .borderRadius(16)
             .padding({ left: 12, right: 12 })
             .margin({ right: 6, bottom: 6 })
+            .scale({ x: this.draftSubjectId === subject.id ? 1.04 : 1, y: this.draftSubjectId === subject.id ? 1.04 : 1 })
+            .animation({ duration: 180, curve: Curve.EaseOut })
             .onClick(() => {
               this.draftSubjectId = subject.id;
             })
@@ -1025,9 +1039,17 @@ struct Index {
         .caretColor(Tokens.orange)
         .backgroundColor(Tokens.surface)
         .borderWidth(1)
-        .borderColor('#B3FFFFFF')
+        .borderColor(this.titleFocused ? '#CCFFC531' : '#B3FFFFFF')
         .borderRadius(14)
         .padding({ left: 14, right: 14 })
+        .scale({ x: this.titleFocused ? 1.006 : 1, y: this.titleFocused ? 1.006 : 1 })
+        .animation({ duration: 220, curve: Curve.EaseOut })
+        .onFocus(() => {
+          this.titleFocused = true;
+        })
+        .onBlur(() => {
+          this.titleFocused = false;
+        })
         .onChange((value: string) => {
           this.draftTitle = value;
         })
@@ -1076,7 +1098,34 @@ struct Index {
       .backgroundColor('#EBDFC6')
       .borderRadius(12)
 
-      if (this.draftMode === 'fixed') {
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row() {
+          ForEach(['今天', '1 天', '2 天', '4 天', '7 天', '15 天'], (label: string, index: number) => {
+            Column() {
+              Circle({ width: 8, height: 8 })
+                .fill(index === 0 ? Tokens.orange : Tokens.surface)
+                .stroke(index === 0 ? Tokens.orange : '#80FF9C2C')
+                .strokeWidth(1.5)
+              Text(label)
+                .fontSize(7.5)
+                .fontColor(index === 0 ? '#B16A0A' : Tokens.mutedSoft)
+                .margin({ top: 5 })
+            }
+            .layoutWeight(1)
+            .opacity(this.dotVisible > index ? 1 : 0)
+            .translate({ y: this.dotVisible > index ? 0 : 10 })
+            .scale({ x: this.dotVisible > index ? 1 : 0.5, y: this.dotVisible > index ? 1 : 0.5 })
+            .animation({ duration: 220, curve: Curve.EaseOut })
+          })
+        }
+        .width('100%')
+        .margin({ top: 12 })
+        .opacity(this.draftMode === 'curve' ? 1 : 0)
+        .scale({ x: this.draftMode === 'curve' ? 1 : 0.96, y: this.draftMode === 'curve' ? 1 : 0.96 })
+        .translate({ y: this.draftMode === 'curve' ? 0 : -4 })
+        .enabled(this.draftMode === 'curve')
+        .animation({ duration: 220, curve: Curve.EaseOut })
+
         Row() {
           Text('每')
             .fontSize(11)
@@ -1110,29 +1159,16 @@ struct Index {
         }
         .width('100%')
         .margin({ top: 10 })
-      } else {
-        Row() {
-          ForEach(['今天', '1 天', '2 天', '4 天', '7 天', '15 天'], (label: string, index: number) => {
-            Column() {
-              Circle({ width: 8, height: 8 })
-                .fill(index === 0 ? Tokens.orange : Tokens.surface)
-                .stroke(index === 0 ? Tokens.orange : '#80FF9C2C')
-                .strokeWidth(1.5)
-              Text(label)
-                .fontSize(7.5)
-                .fontColor(index === 0 ? '#B16A0A' : Tokens.mutedSoft)
-                .margin({ top: 5 })
-            }
-            .layoutWeight(1)
-            .opacity(this.dotVisible > index ? 1 : 0)
-            .translate({ y: this.dotVisible > index ? 0 : 6 })
-            .scale({ x: this.dotVisible > index ? 1 : 0.6, y: this.dotVisible > index ? 1 : 0.6 })
-            .animation({ duration: 180, curve: Curve.EaseOut })
-          })
-        }
-        .width('100%')
-        .margin({ top: 12 })
+        .opacity(this.draftMode === 'fixed' ? 1 : 0)
+        .scale({ x: this.draftMode === 'fixed' ? 1 : 0.96, y: this.draftMode === 'fixed' ? 1 : 0.96 })
+        .translate({ y: this.draftMode === 'fixed' ? 0 : 4 })
+        .enabled(this.draftMode === 'fixed')
+        .animation({ duration: 220, curve: Curve.EaseOut })
       }
+      .width('100%')
+      .height(this.draftMode === 'fixed' ? 52 : 40)
+      .clip(true)
+      .animation({ duration: 280, curve: Curve.EaseInOut })
 
       Row() {
         Column() {
@@ -1190,6 +1226,8 @@ struct Index {
     .borderColor('#CCFFFFFF')
     .shadow({ radius: 32, color: Tokens.shadow, offsetX: 0, offsetY: 16 })
     .backdropBlur(22)
+    .opacity(this.formProgress)
+    .translate({ y: (1 - this.formProgress) * 18 })
   }
 
   @Builder OtherPage() {
@@ -1276,7 +1314,7 @@ struct Index {
               .borderRadius(18)
               .borderWidth(1)
               .borderColor('#B3FFFFFF')
-              .translate({ x: (1 - this.calendarProgress) * (40 + index * 8) })
+              .translate({ x: (1 - this.calendarProgress) * (60 + index * 10) })
               .opacity(Math.min(1, this.calendarProgress))
               .gesture(LongPressGesture().onAction(() => {
                 this.openItemActions(item);
@@ -1361,7 +1399,7 @@ struct Index {
             .borderRadius(18)
             .borderWidth(1)
             .borderColor('#B3FFFFFF')
-            .translate({ x: (1 - this.calendarProgress) * (54 + index * 9) })
+            .translate({ x: (1 - this.calendarProgress) * (72 + index * 10) })
             .opacity(Math.min(1, this.calendarProgress))
           }, (day: DayCount) => '' + day.date)
         }
@@ -1478,7 +1516,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ x: (1 - this.calendarProgress) * 30 })
+      .translate({ x: (1 - this.calendarProgress) * 50 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
@@ -1549,7 +1587,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ x: (1 - this.calendarProgress) * 42 })
+      .translate({ x: (1 - this.calendarProgress) * 66 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Text('所有数据只保存在本机，不上传，也不需要账号。')
@@ -1582,7 +1620,7 @@ struct Index {
           .backgroundColor(Tokens.yellowSoft)
           .borderRadius(16)
           .translate({ x: (this.tab * 100) + '%' })
-          .animation({ duration: 180, curve: Curve.EaseOut })
+          .animation({ duration: 220, curve: Curve.EaseOut })
 
         Row() {
           ForEach(this.navLabels, (label: string, index: number) => {
