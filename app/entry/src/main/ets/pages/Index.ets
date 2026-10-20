@@ -226,8 +226,8 @@ struct Index {
     setTimeout(() => {
       this.tab = next;
       this.pageOpacity = 0;
-      this.pageShift = next === 2 ? 0 : 22;
-      animateTo({ duration: 320, curve: Curve.EaseOut }, () => {
+      this.pageShift = next === 2 ? 0 : 16;
+      animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
         this.pageOpacity = 1;
         this.pageShift = 0;
       });
@@ -551,6 +551,44 @@ struct Index {
     this.toast('已修改');
   }
 
+  private confirmDeleteSubject(subject: Subject): void {
+    if (this.subjects.length <= 1) {
+      this.toast('至少保留一个科目');
+      return;
+    }
+    let used = 0;
+    for (let i = 0; i < this.items.length; i++) {
+      if (this.items[i].subjectId === subject.id) {
+        used = used + 1;
+      }
+    }
+    if (used > 0) {
+      this.toast('这个科目下还有 ' + used + ' 条记录');
+      return;
+    }
+    AlertDialog.show({
+      title: '删除科目？',
+      message: subject.name,
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: '#C7422C',
+        action: () => {
+          this.subjects = this.subjects.filter((value: Subject) => value.id !== subject.id);
+          if (this.draftSubjectId === subject.id && this.subjects.length > 0) {
+            this.draftSubjectId = this.subjects[0].id;
+          }
+          this.persist();
+          this.toast('已删除 ' + subject.name);
+        }
+      }
+    });
+  }
+
   private deleteFromAction(): void {
     const id = this.actionItem.id;
     this.showItemActions = false;
@@ -596,27 +634,27 @@ struct Index {
         start[i] = 64;
         this.calendarX = start;
         setTimeout(() => {
-          animateTo({ duration: 550, curve: Curve.EaseOut }, () => {
+          animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
             const hit = this.calendarX.slice();
             hit[i] = 0;
             this.calendarX = hit;
           });
           setTimeout(() => {
-            animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
+            animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
               const rebound = this.calendarX.slice();
               rebound[i] = 10;
               this.calendarX = rebound;
             });
             setTimeout(() => {
-              animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
+              animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
                 const settle = this.calendarX.slice();
                 settle[i] = 0;
                 this.calendarX = settle;
               });
-            }, 160);
-          }, 550);
+            }, 100);
+          }, 300);
         }, 20);
-      }, i * 120);
+      }, i * 70);
     }
   }
 
@@ -629,12 +667,12 @@ struct Index {
       animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 0.9;
       });
-    }, 420);
+    }, 300);
     setTimeout(() => {
       animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 1;
       });
-    }, 560);
+    }, 440);
   }
 
   build() {
@@ -725,26 +763,12 @@ struct Index {
       .margin({ top: 24 })
       .alignItems(HorizontalAlign.Center)
 
-      Stack({ alignContent: Alignment.TopStart }) {
-        Row()
-          .width(64)
-          .height(58)
-          .backgroundColor(Tokens.yellowSoft)
-          .borderRadius(18)
-          .borderWidth(1)
-          .borderColor('#B3FFD45E')
-          .translate({ y: this.tab * 67 })
-          .animation({ duration: 220, curve: Curve.EaseOut })
-
-        Column({ space: 9 }) {
-          ForEach(this.navLabels, (label: string, index: number) => {
-            this.NavItem(index, this.navGlyphs[index], label)
-          })
-        }
-        .width(64)
+      Column({ space: 9 }) {
+        ForEach(this.navLabels, (label: string, index: number) => {
+          this.NavItem(index, this.navGlyphs[index], label)
+        })
       }
       .width(64)
-      .height(259)
       .margin({ top: 42 })
 
       Blank()
@@ -765,10 +789,12 @@ struct Index {
         .fontSize(17)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.tab === index ? '#6C4B00' : Tokens.muted)
+        .animation({ duration: 180, curve: Curve.EaseOut })
       Text(label)
         .fontSize(9)
         .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
         .margin({ top: 3 })
+        .animation({ duration: 180, curve: Curve.EaseOut })
     }
     .width(64)
     .height(58)
@@ -1156,22 +1182,15 @@ struct Index {
         .margin({ top: 18, bottom: 8 })
 
       Stack({ alignContent: Alignment.Start }) {
-        Row()
-          .width('50%')
-          .height(32)
-          .backgroundColor(Tokens.surface)
-          .borderRadius(9)
-          .translate({ x: this.draftMode === 'curve' ? 0 : '100%' })
-          .animation({ duration: 260, curve: Curve.EaseOut })
-
         Row() {
           Button('遗忘曲线')
             .layoutWeight(1)
             .height(32)
             .fontSize(11)
             .fontColor(this.draftMode === 'curve' ? Tokens.ink : Tokens.muted)
-            .backgroundColor(Color.Transparent)
+            .backgroundColor(this.draftMode === 'curve' ? Tokens.surface : Color.Transparent)
             .borderRadius(9)
+            .animation({ duration: 180, curve: Curve.EaseOut })
             .onClick(() => {
               this.draftMode = 'curve';
               this.playDots();
@@ -1181,8 +1200,9 @@ struct Index {
             .height(32)
             .fontSize(11)
             .fontColor(this.draftMode === 'fixed' ? Tokens.ink : Tokens.muted)
-            .backgroundColor(Color.Transparent)
+            .backgroundColor(this.draftMode === 'fixed' ? Tokens.surface : Color.Transparent)
             .borderRadius(9)
+            .animation({ duration: 180, curve: Curve.EaseOut })
             .onClick(() => {
               this.draftMode = 'fixed';
             })
@@ -1694,6 +1714,13 @@ struct Index {
                 .fontSize(10)
                 .fontColor(Tokens.inkSoft)
                 .margin({ left: 6 })
+              Text('×')
+                .fontSize(11)
+                .fontColor(Tokens.mutedSoft)
+                .margin({ left: 6 })
+                .onClick(() => {
+                  this.confirmDeleteSubject(subject);
+                })
             }
             .padding({ left: 10, right: 10, top: 7, bottom: 7 })
             .backgroundColor(Tokens.surface)
@@ -1770,42 +1797,32 @@ struct Index {
   }
 
   @Builder BottomNav() {
-    Stack({ alignContent: Alignment.BottomStart }) {
-      Row() {
-        ForEach(this.navLabels, (label: string, index: number) => {
-          Column() {
-            Text(this.navGlyphs[index])
-              .fontSize(17)
-              .fontWeight(this.tab === index ? FontWeight.Bold : FontWeight.Medium)
-              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-            Text(label)
-              .fontSize(8)
-              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-              .margin({ top: 3 })
-          }
-          .layoutWeight(1)
-          .height(60)
-          .justifyContent(FlexAlign.Center)
-          .onClick(() => {
-            this.switchTab(index);
-          })
+    Row() {
+      ForEach(this.navLabels, (label: string, index: number) => {
+        Column() {
+          Text(this.navGlyphs[index])
+            .fontSize(17)
+            .fontWeight(this.tab === index ? FontWeight.Bold : FontWeight.Medium)
+            .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+            .animation({ duration: 180, curve: Curve.EaseOut })
+          Text(label)
+            .fontSize(8)
+            .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+            .margin({ top: 3 })
+            .animation({ duration: 180, curve: Curve.EaseOut })
+        }
+        .layoutWeight(1)
+        .height(66)
+        .justifyContent(FlexAlign.Center)
+        .onClick(() => {
+          this.switchTab(index);
         })
-      }
-      .width('100%')
-      .height(64)
-
-      Row()
-        .width('25%')
-        .height(3)
-        .backgroundColor(Tokens.yellow)
-        .borderRadius(2)
-        .translate({ x: (this.tab * 100) + '%' })
-        .animation({ duration: 300, curve: Curve.EaseOut })
-        .margin({ bottom: 4 })
+      })
     }
     .width('100%')
     .height(66)
     .backgroundColor(this.pageBg())
+    .animation({ duration: 240, curve: Curve.EaseOut })
     .borderWidth({ top: 1 })
     .borderColor(Tokens.line)
   }
