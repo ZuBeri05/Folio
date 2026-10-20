@@ -24,6 +24,7 @@ struct Index {
   @State draftFixedDays: number = 3;
   @State newSubjectName: string = '';
   @State calendarProgress: number = 1;
+  @State calendarStep: number = 7;
   @State dotVisible: number = 6;
   @State formProgress: number = 1;
   @State titleFocused: boolean = false;
@@ -50,6 +51,7 @@ struct Index {
   @State editTitle: string = '';
   @State editSubjectId: string = '';
   @State actionScale: number = 1;
+  @State actionContentOpacity: number = 1;
   private reviewBusy: boolean = false;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
@@ -233,7 +235,11 @@ struct Index {
         this.playDots();
         this.playForm();
       }
-      this.playCalendar();
+      if (next === 2) {
+        this.playCalendarRows();
+      } else {
+        this.playCalendar();
+      }
     }, 100);
   }
 
@@ -401,7 +407,8 @@ struct Index {
     this.settings = {
       reminderEnabled: value,
       reminderTime: this.settings.reminderTime,
-      subjectTimes: this.settings.subjectTimes
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex
     };
     this.persist();
     this.syncReminder();
@@ -411,7 +418,8 @@ struct Index {
     this.settings = {
       reminderEnabled: this.settings.reminderEnabled,
       reminderTime: value,
-      subjectTimes: this.settings.subjectTimes
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex
     };
   }
 
@@ -424,6 +432,33 @@ struct Index {
     this.persist();
     this.syncReminder();
     this.toast('设置已保存');
+  }
+
+  private updateTheme(index: number): void {
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: index
+    };
+    this.persist();
+  }
+
+  private pageColors(index: number): string[] {
+    const palettes: string[][] = [
+      ['#F7F2E4', '#F7F2E4', '#F7F2E4', '#F7F2E4'],
+      ['#F7F2E4', '#F1F5F8', '#F2F5EE', '#F5F1F7'],
+      ['#FBF3E9', '#F8F2EA', '#F4F4EA', '#F7F0F2'],
+      ['#F4F5EC', '#EFF5F1', '#F1F6ED', '#F4F2EC']
+    ];
+    const safe = index >= 0 && index < palettes.length ? index : 0;
+    return palettes[safe];
+  }
+
+  private pageBg(): string {
+    const colors = this.pageColors(this.settings.themeIndex);
+    const index = this.tab >= 0 && this.tab < colors.length ? this.tab : 0;
+    return colors[index];
   }
 
   private addSubject(): void {
@@ -456,6 +491,7 @@ struct Index {
     this.editSubjectId = item.subjectId;
     this.actionMode = 'view';
     this.showItemActions = true;
+    this.actionContentOpacity = 1;
     this.actionScale = 0.9;
     animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
       this.actionScale = 1;
@@ -469,7 +505,23 @@ struct Index {
   private startEditItem(): void {
     this.editTitle = this.actionItem.title;
     this.editSubjectId = this.actionItem.subjectId;
-    this.actionMode = 'edit';
+    this.changeActionMode('edit');
+  }
+
+  private changeActionMode(mode: string): void {
+    animateTo({ duration: 120, curve: Curve.EaseIn }, () => {
+      this.actionContentOpacity = 0;
+      this.actionScale = 0.98;
+    });
+    setTimeout(() => {
+      this.actionMode = mode;
+      this.actionContentOpacity = 0;
+      this.actionScale = 0.98;
+      animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
+        this.actionContentOpacity = 1;
+        this.actionScale = 1;
+      });
+    }, 120);
   }
 
   private saveItemEdit(): void {
@@ -531,6 +583,15 @@ struct Index {
     }
   }
 
+  private playCalendarRows(): void {
+    this.calendarStep = 0;
+    for (let i = 0; i < 7; i++) {
+      setTimeout(() => {
+        this.calendarStep = i + 1;
+      }, 40 + i * 70);
+    }
+  }
+
   private playCalendar(): void {
     this.calendarProgress = 0;
     animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
@@ -567,7 +628,8 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Tokens.bg)
+    .backgroundColor(this.pageBg())
+    .animation({ duration: 320, curve: Curve.EaseOut })
     .onAreaChange((oldValue: Area, newValue: Area) => {
       this.isWide = Number(newValue.width) >= 840;
       this.isTablet = Number(newValue.width) >= 700;
@@ -665,7 +727,8 @@ struct Index {
     }
     .width(92)
     .height('100%')
-    .backgroundColor(Tokens.bg)
+    .backgroundColor(this.pageBg())
+    .animation({ duration: 320, curve: Curve.EaseOut })
   }
 
   @Builder NavItem(index: number, glyph: string, label: string) {
@@ -710,7 +773,8 @@ struct Index {
     .width('100%')
     .height(72)
     .padding({ left: this.isWide ? 44 : 20, right: this.isWide ? 44 : 20 })
-    .backgroundColor(Tokens.bg)
+    .backgroundColor(this.pageBg())
+    .animation({ duration: 320, curve: Curve.EaseOut })
   }
 
   @Builder TodayPane() {
@@ -752,7 +816,7 @@ struct Index {
                 this.ReviewRow(item)
               }
               .width('100%')
-              .translate({ x: (1 - this.calendarProgress) * (50 + index * 10) })
+              .translate({ y: (1 - this.calendarProgress) * (18 + index * 4) })
               .opacity(Math.min(1, this.calendarProgress))
             }, (item: StudyItem) => item.id)
           }
@@ -761,6 +825,7 @@ struct Index {
           }
         }
         .width('100%')
+        .constraintSize({ minHeight: '100%' })
         .padding({ bottom: 24 })
       }
       .width('100%')
@@ -864,8 +929,11 @@ struct Index {
         .borderRadius(16)
         .borderWidth(1)
         .borderColor('#B3FFFFFF')
-        .translate({ x: (1 - this.calendarProgress) * (50 + index * 10) })
+        .translate({ y: (1 - this.calendarProgress) * (18 + index * 4) })
         .opacity(Math.min(1, this.calendarProgress))
+        .onClick(() => {
+          this.openItemActions(item);
+        })
         .gesture(LongPressGesture().onAction(() => {
           this.openItemActions(item);
         }))
@@ -1141,10 +1209,26 @@ struct Index {
             .onClick(() => {
               this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
             })
-          Text(this.draftFixedDays + ' 天')
-            .fontSize(13)
+          TextInput({ text: this.draftFixedDays + '' })
+            .width(52)
+            .height(30)
+            .fontSize(12)
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.ink)
+            .textAlign(TextAlign.Center)
+            .maxLength(2)
+            .backgroundColor(Tokens.surface)
+            .borderRadius(8)
+            .onChange((value: string) => {
+              const days = Number(value);
+              if (!isNaN(days) && days >= 1) {
+                this.draftFixedDays = Math.min(90, Math.round(days));
+              }
+            })
+          Text('天')
+            .fontSize(11)
+            .fontColor(Tokens.muted)
+            .margin({ left: 4 })
           Button('+')
             .width(30)
             .height(30)
@@ -1314,8 +1398,11 @@ struct Index {
               .borderRadius(18)
               .borderWidth(1)
               .borderColor('#B3FFFFFF')
-              .translate({ x: (1 - this.calendarProgress) * (60 + index * 10) })
+              .translate({ y: (1 - this.calendarProgress) * (16 + index * 4) })
               .opacity(Math.min(1, this.calendarProgress))
+              .onClick(() => {
+                this.openItemActions(item);
+              })
               .gesture(LongPressGesture().onAction(() => {
                 this.openItemActions(item);
               }))
@@ -1399,11 +1486,14 @@ struct Index {
             .borderRadius(18)
             .borderWidth(1)
             .borderColor('#B3FFFFFF')
-            .translate({ x: (1 - this.calendarProgress) * (72 + index * 10) })
-            .opacity(Math.min(1, this.calendarProgress))
+            .opacity(this.calendarStep > index ? 1 : 0)
+            .translate({ y: this.calendarStep > index ? 0 : 18 })
+            .scale({ x: this.calendarStep > index ? 1 : 0.97, y: this.calendarStep > index ? 1 : 0.97 })
+            .animation({ duration: 240, curve: Curve.EaseOut })
           }, (day: DayCount) => '' + day.date)
         }
         .width('100%')
+        .constraintSize({ minHeight: '100%' })
         .padding({ bottom: 24 })
       }
       .width('100%')
@@ -1516,7 +1606,57 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ x: (1 - this.calendarProgress) * 50 })
+      .translate({ y: (1 - this.calendarProgress) * 14 })
+      .opacity(Math.min(1, this.calendarProgress))
+
+      Column() {
+        Text('页面配色')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.muted)
+        Text('四套低饱和配色，每个页面有轻微色差')
+          .fontSize(8.5)
+          .fontColor(Tokens.mutedSoft)
+          .margin({ top: 4 })
+
+        Row() {
+          ForEach(['奶油', '雾蓝', '暖砂', '鼠尾草'], (name: string, index: number) => {
+            Column() {
+              Row({ space: 3 }) {
+                ForEach([0, 1, 2, 3], (slot: number) => {
+                  Circle({ width: 13, height: 13 })
+                    .fill(this.pageColors(index)[slot])
+                    .stroke(this.settings.themeIndex === index ? '#80FFC531' : Tokens.line)
+                    .strokeWidth(1)
+                })
+              }
+              Text(name)
+                .fontSize(9)
+                .fontColor(this.settings.themeIndex === index ? Tokens.ink : Tokens.muted)
+                .margin({ top: 6 })
+            }
+            .layoutWeight(1)
+            .padding({ top: 8, bottom: 8 })
+            .backgroundColor(this.settings.themeIndex === index ? Tokens.surface : Color.Transparent)
+            .borderRadius(10)
+            .borderWidth(1)
+            .borderColor(this.settings.themeIndex === index ? '#CCFFC531' : Color.Transparent)
+            .onClick(() => {
+              this.updateTheme(index);
+            })
+          }, (name: string, index: number) => name)
+        }
+        .width('100%')
+        .margin({ top: 10 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(18)
+      .backgroundColor(Tokens.surfaceSoft)
+      .borderRadius(22)
+      .borderWidth(1)
+      .borderColor('#B3FFFFFF')
+      .translate({ y: (1 - this.calendarProgress) * 14 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
@@ -1587,7 +1727,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ x: (1 - this.calendarProgress) * 66 })
+      .translate({ y: (1 - this.calendarProgress) * 20 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Text('所有数据只保存在本机，不上传，也不需要账号。')
@@ -1596,6 +1736,9 @@ struct Index {
         .margin({ top: 18 })
         }
         .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .justifyContent(FlexAlign.Start)
+        .constraintSize({ minHeight: '100%' })
         .padding({ bottom: 24 })
       }
       .layoutWeight(1)
@@ -1614,13 +1757,18 @@ struct Index {
   @Builder BottomNav() {
     Column() {
       Stack({ alignContent: Alignment.Start }) {
-        Row()
-          .width('25%')
-          .height(50)
-          .backgroundColor(Tokens.yellowSoft)
-          .borderRadius(16)
-          .translate({ x: (this.tab * 100) + '%' })
-          .animation({ duration: 220, curve: Curve.EaseOut })
+        Row() {
+          Row()
+            .width('60%')
+            .height(36)
+            .backgroundColor(Tokens.yellowSoft)
+            .borderRadius(13)
+        }
+        .width('25%')
+        .height(50)
+        .justifyContent(FlexAlign.Center)
+        .translate({ x: (this.tab * 100) + '%' })
+        .animation({ duration: 220, curve: Curve.EaseOut })
 
         Row() {
           ForEach(this.navLabels, (label: string, index: number) => {
@@ -1684,7 +1832,8 @@ struct Index {
           .layoutWeight(1)
           .justifyContent(FlexAlign.Start)
           .alignItems(HorizontalAlign.Start)
-          .backgroundColor(Tokens.bg)
+          .backgroundColor(this.pageBg())
+    .animation({ duration: 320, curve: Curve.EaseOut })
           .padding({ left: 12, right: 12, top: 10, bottom: 12 })
           .borderRadius(28)
         }
@@ -1916,6 +2065,47 @@ struct Index {
           .width('100%')
           .margin({ top: 7 })
 
+        Row() {
+          Column() {
+            Text('创建')
+              .fontSize(8)
+              .fontColor(Tokens.mutedSoft)
+            Text(formatShort(this.actionItem.createdAt))
+              .fontSize(11)
+              .fontColor(Tokens.inkSoft)
+              .margin({ top: 3 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Column() {
+            Text('已复习')
+              .fontSize(8)
+              .fontColor(Tokens.mutedSoft)
+            Text(this.actionItem.reviewCount + ' 次')
+              .fontSize(11)
+              .fontColor(Tokens.inkSoft)
+              .margin({ top: 3 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Column() {
+            Text('当前间隔')
+              .fontSize(8)
+              .fontColor(Tokens.mutedSoft)
+            Text(this.actionItem.currentIntervalDays + ' 天')
+              .fontSize(11)
+              .fontColor(Tokens.inkSoft)
+              .margin({ top: 3 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .padding(12)
+        .backgroundColor(Tokens.surfaceSoft)
+        .borderRadius(14)
+        .margin({ top: 14 })
+
         Row()
           .width('100%')
           .height(1)
@@ -2001,7 +2191,7 @@ struct Index {
               .backgroundColor(Tokens.surfaceSoft)
               .borderRadius(12)
               .onClick(() => {
-                this.actionMode = 'view';
+                this.changeActionMode('view');
               })
             Button('保存')
               .layoutWeight(1)
@@ -2019,14 +2209,15 @@ struct Index {
           .margin({ top: 10 })
         }
       }
-      .width(this.isWide ? 480 : '90%')
-      .padding(22)
+      .width(this.isWide ? 560 : '92%')
+      .padding(24)
       .backgroundColor(Tokens.surface)
       .borderRadius(26)
       .borderWidth(1)
       .borderColor('#CCFFFFFF')
       .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
       .scale({ x: this.actionScale, y: this.actionScale })
+      .opacity(this.actionContentOpacity)
     }
     .width('100%')
     .height('100%')

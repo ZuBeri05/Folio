@@ -17,6 +17,9 @@ export class Store {
       if (!parsed.subjects || !parsed.items || !parsed.logs || !parsed.settings) {
         return createDefaultData();
       }
+      if (typeof parsed.settings.themeIndex !== 'number') {
+        parsed.settings.themeIndex = 0;
+      }
       for (let i = 0; i < parsed.subjects.length; i++) {
         const subject = parsed.subjects[i];
         if (subject.id === 'math') {
