@@ -24,7 +24,8 @@ struct Index {
   @State draftFixedDays: number = 3;
   @State newSubjectName: string = '';
   @State calendarProgress: number = 1;
-  @State calendarStep: number = 7;
+  @State calendarX: number[] = [0, 0, 0, 0, 0, 0, 0];
+  @State calendarAlpha: number[] = [1, 1, 1, 1, 1, 1, 1];
   @State dotVisible: number = 6;
   @State formProgress: number = 1;
   @State titleFocused: boolean = false;
@@ -218,15 +219,15 @@ struct Index {
       return;
     }
     const forward = next > this.tab;
-    animateTo({ duration: 100, curve: Curve.EaseIn }, () => {
+    animateTo({ duration: 130, curve: Curve.EaseIn }, () => {
       this.pageOpacity = 0;
       this.pageShift = 0;
     });
     setTimeout(() => {
       this.tab = next;
       this.pageOpacity = 0;
-      this.pageShift = next === 2 ? 0 : 18;
-      animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
+      this.pageShift = next === 2 ? 0 : 22;
+      animateTo({ duration: 320, curve: Curve.EaseOut }, () => {
         this.pageOpacity = 1;
         this.pageShift = 0;
       });
@@ -240,7 +241,7 @@ struct Index {
       } else {
         this.playCalendar();
       }
-    }, 100);
+    }, 130);
   }
 
   private itemSubtitle(item: StudyItem): string {
@@ -317,7 +318,7 @@ struct Index {
       return;
     }
     this.reviewBusy = true;
-    animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
       this.pressedRating = rating;
     });
     setTimeout(() => {
@@ -521,7 +522,7 @@ struct Index {
         this.actionContentOpacity = 1;
         this.actionScale = 1;
       });
-    }, 120);
+    }, 160);
   }
 
   private saveItemEdit(): void {
@@ -569,7 +570,7 @@ struct Index {
 
   private playForm(): void {
     this.formProgress = 0;
-    animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 520, curve: Curve.EaseOut }, () => {
       this.formProgress = 1;
     });
   }
@@ -579,16 +580,43 @@ struct Index {
     for (let i = 0; i < 6; i++) {
       setTimeout(() => {
         this.dotVisible = i + 1;
-      }, i * 90);
+      }, i * 110);
     }
   }
 
   private playCalendarRows(): void {
-    this.calendarStep = 0;
+    this.calendarX = [0, 0, 0, 0, 0, 0, 0];
+    this.calendarAlpha = [0, 0, 0, 0, 0, 0, 0];
     for (let i = 0; i < 7; i++) {
       setTimeout(() => {
-        this.calendarStep = i + 1;
-      }, 40 + i * 70);
+        const shown = this.calendarAlpha.slice();
+        shown[i] = 1;
+        this.calendarAlpha = shown;
+        const start = this.calendarX.slice();
+        start[i] = 64;
+        this.calendarX = start;
+        setTimeout(() => {
+          animateTo({ duration: 550, curve: Curve.EaseOut }, () => {
+            const hit = this.calendarX.slice();
+            hit[i] = 0;
+            this.calendarX = hit;
+          });
+          setTimeout(() => {
+            animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
+              const rebound = this.calendarX.slice();
+              rebound[i] = 10;
+              this.calendarX = rebound;
+            });
+            setTimeout(() => {
+              animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
+                const settle = this.calendarX.slice();
+                settle[i] = 0;
+                this.calendarX = settle;
+              });
+            }, 160);
+          }, 550);
+        }, 20);
+      }, i * 120);
     }
   }
 
@@ -598,15 +626,15 @@ struct Index {
       this.calendarProgress = 1;
     });
     setTimeout(() => {
-      animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 0.9;
       });
-    }, 300);
+    }, 420);
     setTimeout(() => {
       animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 1;
       });
-    }, 400);
+    }, 560);
   }
 
   build() {
@@ -1486,10 +1514,8 @@ struct Index {
             .borderRadius(18)
             .borderWidth(1)
             .borderColor('#B3FFFFFF')
-            .opacity(this.calendarStep > index ? 1 : 0)
-            .translate({ y: this.calendarStep > index ? 0 : 18 })
-            .scale({ x: this.calendarStep > index ? 1 : 0.97, y: this.calendarStep > index ? 1 : 0.97 })
-            .animation({ duration: 240, curve: Curve.EaseOut })
+            .opacity(this.calendarAlpha[index])
+            .translate({ x: this.calendarX[index] })
           }, (day: DayCount) => '' + day.date)
         }
         .width('100%')
@@ -1614,11 +1640,6 @@ struct Index {
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.muted)
-        Text('四套低饱和配色，每个页面有轻微色差')
-          .fontSize(8.5)
-          .fontColor(Tokens.mutedSoft)
-          .margin({ top: 4 })
-
         Row() {
           ForEach(['奶油', '雾蓝', '暖砂', '鼠尾草'], (name: string, index: number) => {
             Column() {
@@ -1630,10 +1651,6 @@ struct Index {
                     .strokeWidth(1)
                 })
               }
-              Text(name)
-                .fontSize(9)
-                .fontColor(this.settings.themeIndex === index ? Tokens.ink : Tokens.muted)
-                .margin({ top: 6 })
             }
             .layoutWeight(1)
             .padding({ top: 8, bottom: 8 })
@@ -1641,6 +1658,8 @@ struct Index {
             .borderRadius(10)
             .borderWidth(1)
             .borderColor(this.settings.themeIndex === index ? '#CCFFC531' : Color.Transparent)
+            .scale({ x: this.settings.themeIndex === index ? 1.03 : 1, y: this.settings.themeIndex === index ? 1.03 : 1 })
+            .animation({ duration: 240, curve: Curve.EaseOut })
             .onClick(() => {
               this.updateTheme(index);
             })
@@ -1687,7 +1706,7 @@ struct Index {
         .width('100%')
 
         Row() {
-          TextInput({ placeholder: '新增科目，如政治', text: this.newSubjectName })
+          TextInput({ text: this.newSubjectName })
             .layoutWeight(1)
             .height(36)
             .fontSize(12)
@@ -1715,10 +1734,6 @@ struct Index {
         .width('100%')
         .margin({ top: 6 })
 
-        Text('颜色按顺序自动分配，可继续添加。')
-          .fontSize(8)
-          .fontColor(Tokens.mutedSoft)
-          .margin({ top: 8 })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -1755,56 +1770,44 @@ struct Index {
   }
 
   @Builder BottomNav() {
-    Column() {
-      Stack({ alignContent: Alignment.Start }) {
-        Row() {
-          Row()
-            .width('60%')
-            .height(36)
-            .backgroundColor(Tokens.yellowSoft)
-            .borderRadius(13)
-        }
-        .width('25%')
-        .height(50)
-        .justifyContent(FlexAlign.Center)
-        .translate({ x: (this.tab * 100) + '%' })
-        .animation({ duration: 220, curve: Curve.EaseOut })
-
-        Row() {
-          ForEach(this.navLabels, (label: string, index: number) => {
-            Column() {
-              Text(this.navGlyphs[index])
-                .fontSize(16)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-              Text(label)
-                .fontSize(8)
-                .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-                .margin({ top: 3 })
-            }
-            .layoutWeight(1)
-            .height(50)
-            .justifyContent(FlexAlign.Center)
-            .margin({ left: 3, right: 3 })
-            .onClick(() => {
-              this.switchTab(index);
-            })
+    Stack({ alignContent: Alignment.BottomStart }) {
+      Row() {
+        ForEach(this.navLabels, (label: string, index: number) => {
+          Column() {
+            Text(this.navGlyphs[index])
+              .fontSize(17)
+              .fontWeight(this.tab === index ? FontWeight.Bold : FontWeight.Medium)
+              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+            Text(label)
+              .fontSize(8)
+              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+              .margin({ top: 3 })
+          }
+          .layoutWeight(1)
+          .height(60)
+          .justifyContent(FlexAlign.Center)
+          .onClick(() => {
+            this.switchTab(index);
           })
-        }
-        .width('100%')
-        .height(50)
+        })
       }
       .width('100%')
-      .height(58)
-      .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-      .backgroundColor(Tokens.surface)
-      .borderRadius(29)
-      .borderWidth(1)
-      .borderColor('#CCFFFFFF')
-      .shadow({ radius: 24, color: '#18000000', offsetX: 0, offsetY: 8 })
+      .height(64)
+
+      Row()
+        .width('25%')
+        .height(3)
+        .backgroundColor(Tokens.yellow)
+        .borderRadius(2)
+        .translate({ x: (this.tab * 100) + '%' })
+        .animation({ duration: 300, curve: Curve.EaseOut })
+        .margin({ bottom: 4 })
     }
     .width('100%')
-    .padding({ left: 14, right: 14, bottom: 8 })
+    .height(66)
+    .backgroundColor(this.pageBg())
+    .borderWidth({ top: 1 })
+    .borderColor(Tokens.line)
   }
 
   @Builder ReviewOverlay() {
