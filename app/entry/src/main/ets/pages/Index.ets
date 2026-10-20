@@ -214,12 +214,12 @@ struct Index {
     const forward = next > this.tab;
     animateTo({ duration: 80, curve: Curve.EaseIn }, () => {
       this.pageOpacity = 0;
-      this.pageShift = forward ? -10 : 10;
+      this.pageShift = 0;
     });
     setTimeout(() => {
       this.tab = next;
       this.pageOpacity = 0;
-      this.pageShift = next === 2 ? 0 : (forward ? 16 : -16);
+      this.pageShift = next === 2 ? 0 : 14;
       animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
         this.pageOpacity = 1;
         this.pageShift = 0;
@@ -521,14 +521,19 @@ struct Index {
 
   private playCalendar(): void {
     this.calendarProgress = 0;
-    animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
-      this.calendarProgress = 1.08;
+    animateTo({ duration: 250, curve: Curve.EaseOut }, () => {
+      this.calendarProgress = 1;
     });
     setTimeout(() => {
-      animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 80, curve: Curve.EaseOut }, () => {
+        this.calendarProgress = 0.92;
+      });
+    }, 250);
+    setTimeout(() => {
+      animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 1;
       });
-    }, 260);
+    }, 330);
   }
 
   build() {
