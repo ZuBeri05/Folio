@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { promptAction, LengthMetrics, KeyboardAvoidMode } from '@kit.ArkUI';
+import { promptAction, LengthMetrics, KeyboardAvoidMode, window } from '@kit.ArkUI';
 import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
 import { Store } from '../data/Store';
 import { scheduleNext, firstReviewAt, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
@@ -14,6 +14,8 @@ struct Index {
   @State subjects: Subject[] = [];
   @State settings: Settings = createDefaultData().settings;
   @State tab: number = 0;
+  @StorageProp('topInset') topInset: number = 0;
+  @StorageProp('bottomInset') bottomInset: number = 0;
   @State isWide: boolean = true;
   @State showReview: boolean = false;
   @State reviewItem: StudyItem = emptyItem();
@@ -93,6 +95,7 @@ struct Index {
     this.items = data.items;
     this.logs = data.logs;
     this.settings = data.settings;
+    this.syncSystemBars();
     if (this.subjects.length > 0) {
       this.draftSubjectId = this.subjects[0].id;
     }
@@ -246,6 +249,7 @@ struct Index {
     });
     setTimeout(() => {
       this.tab = next;
+      this.syncSystemBars();
       this.pageOpacity = 0;
       this.pageShift = next === 2 ? 0 : 16;
       animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
@@ -464,6 +468,29 @@ struct Index {
       themeIndex: index
     };
     this.persist();
+    this.syncSystemBars();
+  }
+
+  private syncSystemBars(): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    const bg = this.pageBg();
+    window.getLastWindow(context).then((win: window.Window) => {
+      win.setWindowBackgroundColor(bg);
+      win.setWindowSystemBarProperties({
+        statusBarColor: '#00000000',
+        statusBarContentColor: '#1F1B14',
+        navigationBarColor: '#00000000',
+        navigationBarContentColor: '#1F1B14'
+      }).catch(() => {
+      });
+      win.setWindowLayoutFullScreen(true).then(() => {
+        const area = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+        AppStorage.setOrCreate('topInset', px2vp(area.topRect.height));
+        AppStorage.setOrCreate('bottomInset', px2vp(area.bottomRect.height));
+      }).catch(() => {
+      });
+    }).catch(() => {
+    });
   }
 
   private pageColors(index: number): string[] {
@@ -799,6 +826,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .padding({ top: this.topInset, bottom: this.bottomInset })
   }
 
   @Builder PhoneLayout() {
@@ -813,6 +841,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .padding({ top: this.topInset, bottom: this.bottomInset })
   }
 
   @Builder Rail() {

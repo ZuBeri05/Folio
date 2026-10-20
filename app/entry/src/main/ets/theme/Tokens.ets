@@ -1,7 +1,7 @@
 export class Tokens {
   static readonly bg: string = '#F7F2E4';
-  static readonly surface: string = '#FFFDF8';
-  static readonly surfaceSoft: string = '#D9FFFDF8';
+  static readonly surface: string = '#D9FFFDF8';
+  static readonly surfaceSoft: string = '#B3FFFDF8';
   static readonly ink: string = '#2C251D';
   static readonly inkSoft: string = '#4B4032';
   static readonly muted: string = '#8D7F6C';
