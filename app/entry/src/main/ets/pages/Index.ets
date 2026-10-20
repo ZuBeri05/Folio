@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, LengthMetrics } from '@kit.ArkUI';
 import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
 import { Store } from '../data/Store';
 import { scheduleNext, firstReviewAt, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
@@ -1235,6 +1235,7 @@ struct Index {
         .borderColor(this.titleFocused ? '#C9A24A' : '#B3FFFFFF')
         .borderRadius(14)
         .padding({ left: 14, right: 14 })
+        .focusBox({ margin: LengthMetrics.vp(0), strokeWidth: LengthMetrics.vp(0) })
         .animation({ duration: 180, curve: Curve.EaseOut })
         .onFocus(() => {
           this.titleFocused = true;
@@ -1324,15 +1325,18 @@ struct Index {
           Text('每')
             .fontSize(11)
             .fontColor(Tokens.muted)
-          Button('-')
-            .width(32)
-            .height(32)
+          Text('−')
+            .width(26)
+            .height(26)
+            .lineHeight(26)
             .fontSize(16)
+            .fontWeight(FontWeight.Bold)
             .fontColor('#6C4B00')
-            .backgroundColor(Tokens.yellowSoft)
+            .textAlign(TextAlign.Center)
+            .backgroundColor('#FBF4E5')
             .borderWidth(1)
-            .borderColor('#E3C98F')
-            .borderRadius(16)
+            .borderColor('#DCC49A')
+            .borderRadius(13)
             .margin({ left: 10, right: 8 })
             .onClick(() => {
               this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
@@ -1357,15 +1361,18 @@ struct Index {
             .fontSize(11)
             .fontColor(Tokens.muted)
             .margin({ left: 4 })
-          Button('+')
-            .width(32)
-            .height(32)
+          Text('+')
+            .width(26)
+            .height(26)
+            .lineHeight(26)
             .fontSize(16)
+            .fontWeight(FontWeight.Bold)
             .fontColor('#6C4B00')
-            .backgroundColor(Tokens.yellowSoft)
+            .textAlign(TextAlign.Center)
+            .backgroundColor('#FBF4E5')
             .borderWidth(1)
-            .borderColor('#E3C98F')
-            .borderRadius(16)
+            .borderColor('#DCC49A')
+            .borderRadius(13)
             .margin({ left: 8 })
             .onClick(() => {
               this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
@@ -2344,6 +2351,8 @@ struct Index {
                 .borderRadius(15)
                 .padding({ left: 11, right: 11 })
                 .margin({ right: 6, bottom: 6 })
+                .scale({ x: this.editSubjectId === subject.id ? 1.04 : 1, y: this.editSubjectId === subject.id ? 1.04 : 1 })
+                .animation({ duration: 180, curve: Curve.EaseOut })
                 .onClick(() => {
                   this.editSubjectId = subject.id;
                 })
