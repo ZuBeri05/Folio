@@ -1,0 +1,10 @@
+node_modules/
+.tools/
+.hvigor/
+oh_modules/
+build/
+**/build/
+*.hap
+*.hsp
+*.har
+design/*.png
