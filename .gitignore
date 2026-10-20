@@ -8,3 +8,4 @@ build/
 *.hsp
 *.har
 design/*.png
+**/.dsh-ops-update-*.lock
