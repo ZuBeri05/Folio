@@ -138,6 +138,8 @@
 
 ## 4. 提醒方案
 
+> 实现变更（2026-10-21）：本机代理提醒被系统管控，普通应用配额为 0，发布返回 1700002。首版实际使用 Calendar Kit，在独立日历账户「结绳复习」中写入每天 20:00 的重复日程。下文代理提醒内容保留为背景，实际行为以 Calendar Kit 为准。
+
 ### 4.1 主方案：代理提醒（Reminder Agent）
 
 - 使用 @kit.BackgroundTasksKit 的 reminderAgentManager。
@@ -241,7 +243,7 @@
 - Stage 模型，单 HAP 模块，API 26。
 - 状态管理：V1 稳定写法（@State / @Observed / @ObjectLink），避免首版引入 V2 迁移风险。
 - 本地持久化：@kit.ArkData 的 preferences（JSON）。首版数据量小；记录数增长到数千条后再迁移 relationalStore。
-- 提醒：@kit.BackgroundTasksKit + @kit.NotificationKit。
+- 提醒：@kit.CalendarKit（系统日历）+ @kit.NotificationKit（通知权限查询）。
 - 导航：Navigation + NavPathStack。
 - 响应式：onAreaChange / 窗口宽度断点 840vp。
 
@@ -359,8 +361,9 @@ CREATE INDEX idx_logs_item ON review_logs(item_id, reviewed_at DESC);
 ## 9. 交付与构建
 
 - 使用 DevEco CLI 创建工程、安装依赖、语法检查、构建 HAP。
-- 本机无 DevEco Studio；优先使用官方 @deveco/deveco-cli，失败再安装 DevEco Studio 26.0.0。
-- HAP 安装到平板需要签名；如 CLI 无法自动签名，使用 DevEco Studio 登录华为账号完成调试签名。
+- 本机已安装 DevEco Studio 26.0.0.851；使用官方 @deveco/deveco-cli 构建。
+- HAP 已使用华为开发者调试签名，并安装到 HUAWEI MatePad 11.5 S。
+- 代理提醒被系统管控，实际使用 Calendar Kit；首次打开请求日历权限。
 - 交付内容：
   - 完整 ArkTS 工程源码。
   - 设计预览图。

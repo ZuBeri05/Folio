@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "结绳"
+    },
+    {
+      "name": "reason_calendar",
+      "value": "用于把每天的复习提醒写入系统日历"
     }
   ]
 }

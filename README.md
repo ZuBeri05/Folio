@@ -10,73 +10,85 @@
 
 ## 当前状态
 
+- 已编译、已签名、已安装到 HUAWEI MatePad 11.5 S。
+- App 包名：com.jiesheng.review
+- 安装包：dist/jiesheng-debug.hap
+- 桌面副本：C:\Users\33065\Desktop\结绳-debug.hap
 - 设计预览：design/home.html、design/review.html
 - 设计文档：docs/superpowers/specs/2026-10-20-jiesheng-review-reminder-design.md
-- ArkTS 工程：app/
-- 当前阻塞：本机没有 HarmonyOS SDK / Command Line Tools。DevEco CLI 已安装到 .tools/，但创建/构建工程需要 SDK。
+- 真机截图：design/device-review-final.png、design/device-composer-4.png
 
-## 需要一次手动下载
+首次打开如果出现「日历」权限弹窗，请选择允许。提醒会写入系统日历里的独立账户「结绳复习」，不会混进你的个人日程。
 
-HarmonyOS SDK 的官方下载页需要登录华为账号。请任选一种：
+## 提醒方案
 
-### 方案 A：Command Line Tools（推荐，体积更小）
+代理提醒（Reminder Agent）在当前设备上被系统管控，普通应用配额为 0，发布时返回：
 
-1. 打开 https://developer.huawei.com/consumer/cn/download/
-2. 登录华为账号。
-3. 下载 Windows 版 Command Line Tools 26.0.0。
-4. 解压到例如 D:\harmony\command-line-tools。
-5. 把路径告诉开发者，或设置：
+> The number of reminders exceeds the limit.
 
-~~~powershell
-$env:DEVECO_CLI_CLT_PATH = "D:\harmony\command-line-tools"
-~~~
+因此首版使用 **Calendar Kit** 作为可靠提醒通道：
 
-### 方案 B：DevEco Studio 26.0.0
+- 在系统日历中创建独立账户「结绳复习」。
+- 写入一条每天 20:00 的重复日程，名称为「结绳 · 复习提醒」。
+- 日程提前 0 分钟提醒，到点由系统日历弹出通知。
+- 日程重复 60 天；App 每次启动、增删记录、修改设置时都会重写。
+- 关闭提醒或在设置里清空数据时，会删除这条日历日程。
+- 需要 ohos.permission.READ_CALENDAR / ohos.permission.WRITE_CALENDAR。
 
-1. 打开 https://developer.huawei.com/consumer/cn/download/
-2. 登录后下载 DevEco Studio 26.0.0（Windows，约 3.1 GB）。
-3. 安装到默认路径，或设置：
+设置页会显示：
 
-~~~powershell
-$env:DEVECO_CLI_STUDIO_PATH = "C:\Program Files\Huawei\DevEco Studio"
-~~~
+- 提醒方式：系统日历 / 已关闭 / 未安排
+- 已安排 N 个日程
+- 通知权限是否开启
+- 若写入失败，显示具体原因
+
+## 动画
+
+这是首版已经实现的动效，不是设计稿里的静态效果：
+
+- 今日列表入场：420ms 淡入 + 16vp 上移。
+- 打开复习：卡片 360ms 从 0.94 弹性放大到 1。
+- 评分按压：按钮缩放 + 变色，随后卡片缩小收起。
+- 复习完成：条目从今日队列移除，列表在 260ms 内重排。
+- 手机 / 平板竖屏「记一条」：底部面板 340ms 滑入，关闭时 180ms 收回。
+- 页面切换：即时切换，不堆叠额外装饰动画。
+
+## 功能范围
+
+- 今日复习队列
+- 快速记录（科目 + 章节/知识点）
+- 遗忘曲线 / 固定间隔
+- 忘了 / 模糊 / 记得
+- 记录列表
+- 接下来 7 天
+- 每日提醒时间
+- 本地清空数据
+- 平板横屏左右分栏；竖屏 / 手机单列布局
 
 ## 构建
 
-在项目根目录执行：
+环境：DevEco Studio 26.0.0.851，HarmonyOS SDK 26.0.0。
 
 ~~~powershell
-$env:DEVECO_CLI_CLT_PATH = "D:\harmony\command-line-tools"
+$env:DEVECO_CLI_STUDIO_PATH = "D:\DevEco Studio"
 $cli = ".\.tools\node_modules\@deveco\deveco-cli\cli.js"
 Set-Location .\app
 node $cli build --build-mode debug
 ~~~
 
-如果需要签名：
+签名：
 
 ~~~powershell
-node $cli signature generate
+node $cli auth login --no-prompt
+node $cli signature generate --type debug --team-id 10086000915735486 --force
 ~~~
 
-签名可能需要登录华为账号：
+安装：
 
 ~~~powershell
-node $cli auth login
-~~~
-
-## 安装到平板
-
-1. 平板打开开发者模式和 USB 调试。
-2. 连接电脑，确认设备：
-
-~~~powershell
-node $cli device list
-~~~
-
-3. 安装构建产物（路径以实际 build 输出为准）：
-
-~~~powershell
-hdc install .\entry\build\default\outputs\default\entry-default-signed.hap
+$env:DEVECO_CLI_STUDIO_PATH = "D:\DevEco Studio"
+$hdc = "D:\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe"
+& $hdc install -r .\dist\jiesheng-debug.hap
 ~~~
 
 ## 工程结构
@@ -89,32 +101,13 @@ app/
     domain/Models.ets             数据模型
     domain/Scheduling.ets         遗忘曲线 / 固定间隔算法
     data/Store.ets                preferences 本地持久化
-    services/ReminderService.ets  代理提醒 + 通知授权
+    services/ReminderService.ets  系统日历提醒 + 权限
     theme/Tokens.ets              颜色与视觉 token
 ~~~
 
-## 提醒说明
+## 已知说明
 
-- 使用 HarmonyOS Reminder Agent 设置每天固定时间提醒。
-- 需要 ohos.permission.PUBLISH_AGENT_REMINDER。
-- 如果系统/账号管控导致代理提醒不可用，App 会提示“系统提醒未开启”，不会假装成功。
-- 后续可在设置中增加“用系统日历提醒”的可选降级方案。
-
-## 首版范围
-
-- 今日复习队列
-- 快速记录（科目 + 章节/知识点）
-- 遗忘曲线 / 固定间隔
-- 忘了 / 模糊 / 记得
-- 记录列表
-- 接下来 7 天
-- 每日提醒时间
-- 本地清空数据
-
-## 后续
-
-- 桌面小组件
-- 数据导出 / 备份
-- 深色模式
-- 单科提醒时间覆盖
-- 系统日历降级
+- 平板最后处于锁屏状态，清理数据后没有再次启动；解锁后打开桌面上的「结绳」即可。
+- 首次添加记录或首次打开时，系统会请求日历权限；允许后设置页会显示「系统日历 · 1 个日程」。
+- 如果拒绝日历权限，App 内仍可记录和查看，但不会有关闭 App 后的系统提醒；设置页会显示原因。
+- 当前记录数据已清空，App 是干净的首次使用状态。

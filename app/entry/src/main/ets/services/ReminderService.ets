@@ -1,6 +1,7 @@
-import { reminderAgentManager } from '@kit.BackgroundTasksKit';
+import { calendarManager } from '@kit.CalendarKit';
+import { abilityAccessCtrl, common, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { notificationManager } from '@kit.NotificationKit';
-import { common } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { Settings } from '../domain/Models';
 
 function parseTime(value: string): number[] {
@@ -17,59 +18,115 @@ function parseTime(value: string): number[] {
 }
 
 export class ReminderService {
-  static async requestPermission(context: common.UIAbilityContext): Promise<boolean> {
+  private static account: calendarManager.CalendarAccount = {
+    name: 'JieshengReview',
+    type: calendarManager.CalendarType.LOCAL,
+    displayName: '结绳复习'
+  };
+
+  private static config: calendarManager.CalendarConfig = {
+    enableReminder: true,
+    color: '#FFC531'
+  };
+
+  static async isEnabled(): Promise<boolean> {
     try {
-      await notificationManager.requestEnableNotification(context);
       return await notificationManager.isNotificationEnabled();
     } catch (error) {
       return false;
     }
   }
 
-  static async sync(context: common.UIAbilityContext, settings: Settings): Promise<void> {
+  static async count(context: common.UIAbilityContext): Promise<number> {
     try {
-      await reminderAgentManager.cancelAllReminders();
+      const calendar = await ReminderService.getCalendar(context);
+      const events = await calendar.getEvents();
+      return events.length;
     } catch (error) {
-      // Ignore cancel failures; new reminders can still be published.
+      return -1;
+    }
+  }
+
+  static async sync(context: common.UIAbilityContext, settings: Settings, hasItems: boolean): Promise<string> {
+    if (!settings.reminderEnabled || !hasItems) {
+      await ReminderService.clearCalendar(context);
+      return 'off';
     }
 
-    if (!settings.reminderEnabled) {
-      return;
-    }
-
-    const enabled = await notificationManager.isNotificationEnabled();
-    if (!enabled) {
-      const allowed = await this.requestPermission(context);
-      if (!allowed) {
-        throw new Error('notification permission denied');
-      }
-    }
+    await ReminderService.requestCalendarPermission(context);
+    const calendar = await ReminderService.getCalendar(context);
+    await ReminderService.clearEvents(calendar);
 
     const time = parseTime(settings.reminderTime);
-    const request: reminderAgentManager.ReminderRequestAlarm = {
-      reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_ALARM,
-      hour: time[0],
-      minute: time[1],
-      daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
-      actionButton: [
-        {
-          title: '打开',
-          type: reminderAgentManager.ActionButtonType.ACTION_BUTTON_TYPE_CLOSE
-        }
-      ],
-      wantAgent: {
-        pkgName: 'com.jiesheng.review',
-        abilityName: 'EntryAbility'
-      },
-      ringDuration: 3,
-      snoozeTimes: 0,
-      title: '结绳',
-      content: '该复习了，打开看看今天的内容。',
-      expiredContent: '今天的复习还在等你。',
-      notificationId: 1001,
-      slotType: notificationManager.SlotType.SERVICE_INFORMATION
-    };
+    const start = new Date();
+    start.setHours(time[0], time[1], 0, 0);
+    if (start.getTime() <= Date.now()) {
+      start.setDate(start.getDate() + 1);
+    }
+    const end = new Date(start.getTime() + 15 * 60 * 1000);
 
-    await reminderAgentManager.publishReminder(request);
+    const event: calendarManager.Event = {
+      title: '结绳 · 复习提醒',
+      description: '打开结绳，看看今天要复习的内容。',
+      type: calendarManager.EventType.NORMAL,
+      startTime: start.getTime(),
+      endTime: end.getTime(),
+      reminderTime: [0],
+      recurrenceRule: {
+        recurrenceFrequency: calendarManager.RecurrenceFrequency.DAILY,
+        count: 60,
+        interval: 1
+      }
+    };
+    await calendar.addEvent(event);
+    return 'calendar';
+  }
+
+  private static async requestCalendarPermission(context: common.UIAbilityContext): Promise<void> {
+    const manager = abilityAccessCtrl.createAtManager();
+    const permissions: Permissions[] = ['ohos.permission.READ_CALENDAR', 'ohos.permission.WRITE_CALENDAR'];
+    const result: PermissionRequestResult = await manager.requestPermissionsFromUser(context, permissions);
+    for (let i = 0; i < result.authResults.length; i++) {
+      if (result.authResults[i] !== 0) {
+        throw new Error('需要日历权限才能写入复习提醒');
+      }
+    }
+  }
+
+  private static async getCalendar(context: common.UIAbilityContext): Promise<calendarManager.Calendar> {
+    const manager = calendarManager.getCalendarManager(context);
+    let calendar: calendarManager.Calendar;
+    try {
+      calendar = await manager.getCalendar(ReminderService.account);
+    } catch (error) {
+      calendar = await manager.createCalendar(ReminderService.account);
+    }
+    try {
+      await calendar.setConfig(ReminderService.config);
+    } catch (error) {
+      // The reminder flag may already be set.
+    }
+    return calendar;
+  }
+
+  private static async clearCalendar(context: common.UIAbilityContext): Promise<void> {
+    try {
+      const calendar = await ReminderService.getCalendar(context);
+      await ReminderService.clearEvents(calendar);
+    } catch (error) {
+      // No calendar permission or no calendar yet; nothing to clear.
+    }
+  }
+
+  private static async clearEvents(calendar: calendarManager.Calendar): Promise<void> {
+    const events = await calendar.getEvents();
+    for (let i = 0; i < events.length; i++) {
+      const id = events[i].id;
+      await new Promise<void>((resolve: () => void) => {
+        calendar.deleteEvent(id, (err: BusinessError) => {
+          resolve();
+        });
+      });
+    }
   }
 }

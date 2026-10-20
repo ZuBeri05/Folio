@@ -24,6 +24,18 @@ struct Index {
   @State draftFixedDays: number = 3;
   @State confirmClear: boolean = false;
   @State todayLabel: string = '';
+  @State reviewScale: number = 0.97;
+  @State isTablet: boolean = false;
+  @State listOpacity: number = 0;
+  @State listShift: number = 16;
+  @State pressedRating: string = '';
+  @State composerScale: number = 0.97;
+  @State composerShift: number = 120;
+  @State notificationEnabled: boolean = false;
+  @State reminderCount: number = -1;
+  @State reminderError: string = '';
+  @State reminderMode: string = '';
+  private reviewBusy: boolean = false;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
   private readonly navLabels: string[] = ['今日', '记录', '日历', '设置'];
@@ -45,6 +57,58 @@ struct Index {
     if (this.subjects.length > 0) {
       this.draftSubjectId = this.subjects[0].id;
     }
+    this.playEntry();
+    this.refreshNotificationState();
+    if (this.settings.reminderEnabled && this.items.length > 0) {
+      this.syncReminder();
+    }
+  }
+
+  private playEntry(): void {
+    this.listOpacity = 0;
+    this.listShift = 16;
+    setTimeout(() => {
+      animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
+        this.listOpacity = 1;
+        this.listShift = 0;
+      });
+    }, 40);
+  }
+
+  private refreshNotificationState(): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    ReminderService.isEnabled().then((enabled: boolean) => {
+      this.notificationEnabled = enabled;
+    }).catch(() => {
+      this.notificationEnabled = false;
+    });
+    ReminderService.count(context).then((count: number) => {
+      this.reminderCount = count;
+    }).catch(() => {
+      this.reminderCount = -1;
+    });
+  }
+
+  private openComposer(): void {
+    this.showComposer = true;
+    this.composerScale = 0.97;
+    this.composerShift = 120;
+    animateTo({ duration: 340, curve: Curve.EaseOut }, () => {
+      this.composerScale = 1;
+      this.composerShift = 0;
+    });
+  }
+
+  private closeComposer(): void {
+    animateTo({ duration: 180, curve: Curve.EaseIn }, () => {
+      this.composerScale = 0.98;
+      this.composerShift = 80;
+    });
+    setTimeout(() => {
+      this.showComposer = false;
+      this.composerScale = 1;
+      this.composerShift = 0;
+    }, 180);
   }
 
   private persist(): void {
@@ -62,8 +126,16 @@ struct Index {
 
   private syncReminder(): void {
     const context = getContext(this) as common.UIAbilityContext;
-    ReminderService.sync(context, this.settings).catch(() => {
-      this.toast('系统提醒未开启，请检查通知权限');
+    ReminderService.sync(context, this.settings, this.items.length > 0).then((mode: string) => {
+      this.reminderError = '';
+      this.reminderMode = mode;
+      setTimeout(() => {
+        this.refreshNotificationState();
+      }, 600);
+    }).catch((error: Error) => {
+      this.reminderError = error.message !== undefined ? error.message : '日历提醒未开启';
+      this.toast('提醒设置失败，请检查日历权限');
+      this.refreshNotificationState();
     });
   }
 
@@ -162,9 +234,31 @@ struct Index {
   private openReview(item: StudyItem): void {
     this.reviewItem = item;
     this.showReview = true;
+    this.reviewScale = 0.94;
+    animateTo({ duration: 360, curve: Curve.EaseOut }, () => {
+      this.reviewScale = 1;
+    });
   }
 
   private finishReview(rating: string): void {
+    if (this.reviewBusy) {
+      return;
+    }
+    this.reviewBusy = true;
+    animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+      this.pressedRating = rating;
+    });
+    setTimeout(() => {
+      animateTo({ duration: 180, curve: Curve.EaseIn }, () => {
+        this.reviewScale = 0.95;
+      });
+      setTimeout(() => {
+        this.commitReview(rating);
+      }, 170);
+    }, 130);
+  }
+
+  private commitReview(rating: string): void {
     const item = this.reviewItem;
     const now = new Date();
     const result = scheduleNext(item, rating, now);
@@ -182,7 +276,9 @@ struct Index {
       reviewCount: item.reviewCount + 1,
       status: item.status
     };
-    this.items = this.items.map((value: StudyItem) => value.id === updated.id ? updated : value);
+    animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
+      this.items = this.items.map((value: StudyItem) => value.id === updated.id ? updated : value);
+    });
     const log: ReviewLog = {
       id: newId(),
       itemId: item.id,
@@ -194,6 +290,9 @@ struct Index {
     };
     this.logs = [log, ...this.logs];
     this.showReview = false;
+    this.reviewScale = 1;
+    this.pressedRating = '';
+    this.reviewBusy = false;
     this.persist();
     this.syncReminder();
     this.toast('下次 ' + formatDate(result.nextAt));
@@ -221,7 +320,9 @@ struct Index {
       reviewCount: 0,
       status: 'active'
     };
-    this.items = [item, ...this.items];
+    animateTo({ duration: 320, curve: Curve.EaseOut }, () => {
+      this.items = [item, ...this.items];
+    });
     this.draftTitle = '';
     this.showComposer = false;
     this.tab = 0;
@@ -269,7 +370,8 @@ struct Index {
     this.logs = [];
     this.confirmClear = false;
     this.persist();
-    this.toast('已清空');
+    this.syncReminder();
+      this.toast('已清空');
   }
 
   build() {
@@ -291,6 +393,7 @@ struct Index {
     .backgroundColor(Tokens.bg)
     .onAreaChange((oldValue: Area, newValue: Area) => {
       this.isWide = Number(newValue.width) >= 840;
+      this.isTablet = Number(newValue.width) >= 700;
     })
   }
 
@@ -394,7 +497,7 @@ struct Index {
     .borderWidth(this.tab === index ? 1 : 0)
     .borderColor('#B3FFD45E')
     .onClick(() => {
-      this.tab = index;
+      this.tab = index; if (index === 0) { this.playEntry(); }
     })
   }
 
@@ -414,7 +517,7 @@ struct Index {
           .borderRadius(17)
           .padding({ left: 14, right: 14 })
           .onClick(() => {
-            this.showComposer = true;
+            this.openComposer();
           })
       }
     }
@@ -466,6 +569,8 @@ struct Index {
         }
         .width('100%')
         .layoutWeight(1)
+        .opacity(this.listOpacity)
+        .translate({ y: this.listShift })
         .scrollBar(BarState.Off)
       }
     }
@@ -486,7 +591,7 @@ struct Index {
         .fontSize(16)
         .fontWeight(FontWeight.Medium)
         .fontColor(Tokens.inkSoft)
-      Text('记下今天学的内容，明天开始提醒你。')
+      Text('记下今天学的内容，到点提醒你。')
         .fontSize(11)
         .fontColor(Tokens.muted)
         .margin({ top: 8 })
@@ -500,9 +605,9 @@ struct Index {
         .margin({ top: 18 })
         .onClick(() => {
           if (this.isWide) {
-            this.toast('在右侧记一条');
+            focusControl.requestFocus('titleInput');
           } else {
-            this.showComposer = true;
+            this.openComposer();
           }
         })
     }
@@ -596,10 +701,10 @@ struct Index {
           .letterSpacing(-0.6)
         Blank()
         Column() {
-          Text('10 / 20')
+          Text(formatShort(Date.now()))
             .fontSize(7.5)
             .fontColor(Tokens.mutedSoft)
-          Text('周二')
+          Text(weekdayCN(Date.now()))
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.inkSoft)
@@ -640,6 +745,7 @@ struct Index {
         .margin({ bottom: 8 })
 
       TextInput({ placeholder: '例如：导数的几何意义', text: this.draftTitle })
+        .id('titleInput')
         .height(50)
         .fontSize(20)
         .fontColor(Tokens.ink)
@@ -788,6 +894,7 @@ struct Index {
         .margin({ top: 10 })
     }
     .width(this.isWide ? 400 : '100%')
+    .alignItems(HorizontalAlign.Start)
     .padding(24)
     .backgroundColor(Tokens.surfaceSoft)
     .borderRadius(26)
@@ -882,6 +989,8 @@ struct Index {
         }
         .layoutWeight(1)
         .width('100%')
+        .opacity(this.listOpacity)
+        .translate({ y: this.listShift })
         .scrollBar(BarState.Off)
       }
     }
@@ -1012,6 +1121,31 @@ struct Index {
         .width('100%')
         .margin({ top: 16 })
 
+        Row() {
+          Text('提醒方式')
+            .fontSize(10)
+            .fontColor(Tokens.muted)
+          Blank()
+          Text(this.reminderMode === 'calendar' ? '系统日历' : (this.reminderMode === 'off' ? '已关闭' : '未安排'))
+            .fontSize(10)
+            .fontColor(this.reminderMode === 'calendar' ? '#6E8C4D' : Tokens.mutedSoft)
+          Text('  ·  ' + (this.reminderCount > 0 ? this.reminderCount : 0) + ' 个日程')
+            .fontSize(9)
+            .fontColor(Tokens.mutedSoft)
+        }
+        .width('100%')
+        .margin({ top: 10 })
+
+        if (this.reminderError.length > 0) {
+          Text(this.reminderError)
+            .fontSize(8.5)
+            .fontColor('#C7422C')
+            .maxLines(3)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .margin({ top: 6 })
+        }
+
         Button('保存设置')
           .width('100%')
           .height(42)
@@ -1088,7 +1222,7 @@ struct Index {
         .height(58)
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
-          this.tab = index;
+          this.tab = index; if (index === 0) { this.playEntry(); }
         })
       })
     }
@@ -1107,22 +1241,6 @@ struct Index {
         .backgroundColor(Tokens.dim)
 
       Column() {
-        Row() {
-          Blank()
-          Button('×')
-            .width(34)
-            .height(34)
-            .fontSize(20)
-            .fontColor(Tokens.muted)
-            .backgroundColor(Tokens.surfaceSoft)
-            .borderRadius(17)
-            .onClick(() => {
-              this.showReview = false;
-            })
-        }
-        .width('100%')
-        .height(50)
-
         if (this.isWide) {
           Row({ space: 48 }) {
             this.ReviewCard()
@@ -1132,23 +1250,27 @@ struct Index {
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
         } else {
-          Scroll() {
-            Column({ space: 16 }) {
-              this.ReviewCard()
-              this.CurvePanel()
-            }
-            .width('100%')
+          Column({ space: 16 }) {
+            this.ReviewCard()
+            this.CurvePanel()
           }
+          .width('100%')
           .layoutWeight(1)
-          .scrollBar(BarState.Off)
+          .justifyContent(FlexAlign.Start)
+          .alignItems(HorizontalAlign.Start)
+          .backgroundColor(Tokens.bg)
+          .padding({ left: 12, right: 12, top: 10, bottom: 12 })
+          .borderRadius(28)
         }
       }
       .width('100%')
       .height('100%')
       .padding({ left: this.isWide ? 40 : 16, right: this.isWide ? 40 : 16, top: 10, bottom: 20 })
+      .backgroundColor(this.isWide ? '#00000000' : Tokens.bg)
     }
     .width('100%')
     .height('100%')
+    .scale({ x: this.reviewScale, y: this.reviewScale })
   }
 
   @Builder ReviewCard() {
@@ -1166,6 +1288,17 @@ struct Index {
         Text((this.reviewItem.reviewCount + 1) + ' / 06')
           .fontSize(9)
           .fontColor(Tokens.mutedSoft)
+        Button('关闭')
+          .height(26)
+          .fontSize(9)
+          .fontColor('#6C4B00')
+          .backgroundColor(Tokens.yellowSoft)
+          .borderRadius(13)
+          .padding({ left: 10, right: 10 })
+          .margin({ left: 10 })
+          .onClick(() => {
+            this.showReview = false;
+          })
       }
       .width('100%')
 
@@ -1228,10 +1361,11 @@ struct Index {
     .layoutWeight(1)
     .height(58)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(Tokens.surfaceSoft)
+    .backgroundColor(this.pressedRating === rating ? Tokens.yellow : '#FFF7DF')
     .borderWidth(1)
-    .borderColor('#B3FFFFFF')
+    .borderColor('#F0D9A8')
     .borderRadius(13)
+    .scale({ x: this.pressedRating === rating ? 0.96 : 1, y: this.pressedRating === rating ? 0.96 : 1 })
     .onClick(() => {
       this.finishReview(rating);
     })
@@ -1305,10 +1439,10 @@ struct Index {
     }
     .width(this.isWide ? 360 : '100%')
     .padding(20)
-    .backgroundColor(Tokens.surfaceSoft)
+    .backgroundColor('#FFFDF8')
     .borderRadius(22)
     .borderWidth(1)
-    .borderColor('#B3FFFFFF')
+    .borderColor('#FFFFFF')
   }
 
   @Builder ComposerOverlay() {
@@ -1318,38 +1452,41 @@ struct Index {
         .height('100%')
         .backgroundColor(Tokens.dim)
         .onClick(() => {
-          this.showComposer = false;
+          this.closeComposer();
         })
 
       Column() {
         Row() {
-          Text('记一条')
+          Text('')
             .fontSize(24)
             .fontWeight(FontWeight.Bold)
             .fontColor(Tokens.ink)
           Blank()
-          Button('×')
-            .width(32)
-            .height(32)
-            .fontSize(18)
-            .fontColor(Tokens.muted)
-            .backgroundColor(Tokens.surface)
-            .borderRadius(16)
+          Button('关闭')
+            .height(30)
+            .fontSize(10)
+            .fontColor('#6C4B00')
+            .backgroundColor(Tokens.yellowSoft)
+            .borderRadius(15)
+            .padding({ left: 12, right: 12 })
             .onClick(() => {
-              this.showComposer = false;
+              this.closeComposer();
             })
         }
         .width('100%')
         .margin({ bottom: 12 })
 
-        Scroll() {
+        Column() {
           this.ComposerPane()
         }
         .layoutWeight(1)
-        .scrollBar(BarState.Off)
+        .justifyContent(FlexAlign.Start)
+        .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
-      .height('88%')
+      .height(this.isTablet ? '50%' : '88%')
+      .scale({ x: this.composerScale, y: this.composerScale })
+      .translate({ y: this.composerShift })
       .padding({ left: 16, right: 16, top: 16, bottom: 12 })
       .backgroundColor(Tokens.bg)
       .borderRadius({ topLeft: 28, topRight: 28 })
