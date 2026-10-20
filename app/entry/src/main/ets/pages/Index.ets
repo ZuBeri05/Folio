@@ -30,11 +30,16 @@ struct Index {
   @State listShift: number = 16;
   @State pressedRating: string = '';
   @State composerScale: number = 0.97;
-  @State composerShift: number = 120;
+  @State composerShift: number = 24;
+  @State composerOpacity: number = 1;
+  @State composerDim: number = 0;
   @State notificationEnabled: boolean = false;
   @State reminderCount: number = -1;
   @State reminderError: string = '';
   @State reminderMode: string = '';
+  @State pageOpacity: number = 1;
+  @State pageShift: number = 0;
+  @State pressedItemId: string = '';
   private reviewBusy: boolean = false;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
@@ -91,23 +96,31 @@ struct Index {
 
   private openComposer(): void {
     this.showComposer = true;
-    this.composerScale = 0.97;
-    this.composerShift = 120;
-    animateTo({ duration: 340, curve: Curve.EaseOut }, () => {
+    this.composerScale = 0.92;
+    this.composerShift = 24;
+    this.composerOpacity = 0;
+    this.composerDim = 0;
+    animateTo({ duration: 360, curve: Curve.EaseOut }, () => {
       this.composerScale = 1;
       this.composerShift = 0;
+      this.composerOpacity = 1;
+      this.composerDim = 1;
     });
   }
 
   private closeComposer(): void {
     animateTo({ duration: 180, curve: Curve.EaseIn }, () => {
-      this.composerScale = 0.98;
-      this.composerShift = 80;
+      this.composerScale = 0.96;
+      this.composerShift = 10;
+      this.composerOpacity = 0;
+      this.composerDim = 0;
     });
     setTimeout(() => {
       this.showComposer = false;
       this.composerScale = 1;
       this.composerShift = 0;
+      this.composerOpacity = 1;
+      this.composerDim = 0;
     }, 180);
   }
 
@@ -169,6 +182,42 @@ struct Index {
     const result = this.items.slice();
     result.sort((a: StudyItem, b: StudyItem) => b.createdAt - a.createdAt);
     return result;
+  }
+
+  private todayCreatedItems(): StudyItem[] {
+    const today = startOfDay(new Date()).getTime();
+    const result: StudyItem[] = [];
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
+      if (startOfDay(new Date(item.createdAt)).getTime() === today) {
+        result.push(item);
+      }
+    }
+    result.sort((a: StudyItem, b: StudyItem) => b.createdAt - a.createdAt);
+    return result;
+  }
+
+  private switchTab(next: number): void {
+    if (next === this.tab) {
+      return;
+    }
+    const forward = next > this.tab;
+    animateTo({ duration: 150, curve: Curve.EaseIn }, () => {
+      this.pageOpacity = 0;
+      this.pageShift = forward ? -14 : 14;
+    });
+    setTimeout(() => {
+      this.tab = next;
+      this.pageOpacity = 0;
+      this.pageShift = forward ? 22 : -22;
+      animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+        this.pageOpacity = 1;
+        this.pageShift = 0;
+      });
+      if (next === 0) {
+        this.playEntry();
+      }
+    }, 120);
   }
 
   private itemSubtitle(item: StudyItem): string {
@@ -325,7 +374,7 @@ struct Index {
     });
     this.draftTitle = '';
     this.showComposer = false;
-    this.tab = 0;
+    this.switchTab(0);
     this.persist();
     this.syncReminder();
     this.toast('已保存，' + formatDate(firstAt) + ' 提醒');
@@ -405,7 +454,7 @@ struct Index {
         if (this.tab === 0) {
           Row() {
             this.TodayPane()
-            this.ComposerPane()
+            this.ComposerPane(false)
           }
           .width('100%')
           .layoutWeight(1)
@@ -496,8 +545,10 @@ struct Index {
     .borderRadius(18)
     .borderWidth(this.tab === index ? 1 : 0)
     .borderColor('#B3FFD45E')
+    .scale({ x: this.tab === index ? 1.03 : 1, y: this.tab === index ? 1.03 : 1 })
+    .animation({ duration: 260, curve: Curve.EaseOut })
     .onClick(() => {
-      this.tab = index; if (index === 0) { this.playEntry(); }
+      this.switchTab(index);
     })
   }
 
@@ -557,26 +608,34 @@ struct Index {
       .alignItems(VerticalAlign.Center)
       .margin({ top: this.isWide ? 10 : 8, bottom: 22 })
 
-      if (this.dueItems().length === 0) {
-        this.EmptyToday()
-      } else {
-        List({ space: 12 }) {
-          ForEach(this.dueItems(), (item: StudyItem) => {
-            ListItem() {
+      Scroll() {
+        Column({ space: 12 }) {
+          if (this.dueItems().length === 0) {
+            this.EmptyToday()
+          } else {
+            ForEach(this.dueItems(), (item: StudyItem) => {
               this.ReviewRow(item)
-            }
-          }, (item: StudyItem) => item.id)
+            }, (item: StudyItem) => item.id)
+          }
+          if (this.todayCreatedItems().length > 0) {
+            this.TodayLogged()
+          }
         }
         .width('100%')
-        .layoutWeight(1)
-        .opacity(this.listOpacity)
-        .translate({ y: this.listShift })
-        .scrollBar(BarState.Off)
+        .padding({ bottom: 24 })
       }
+      .width('100%')
+      .layoutWeight(1)
+      .opacity(this.listOpacity)
+      .translate({ y: this.listShift })
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .layoutWeight(1)
     .height('100%')
     .alignItems(HorizontalAlign.Start)
+    .opacity(this.pageOpacity)
+    .translate({ x: this.pageShift })
     .padding({
       left: this.isWide ? 44 : 20,
       right: this.isWide ? 24 : 20,
@@ -612,8 +671,61 @@ struct Index {
         })
     }
     .width('100%')
-    .layoutWeight(1)
+    .height(230)
     .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder TodayLogged() {
+    Column({ space: 8 }) {
+      Row() {
+        Text('今天已记')
+          .fontSize(12)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.inkSoft)
+        Text(this.todayCreatedItems().length + ' 条')
+          .fontSize(9)
+          .fontColor(Tokens.mutedSoft)
+          .margin({ left: 7 })
+        Blank()
+        Text('查看全部')
+          .fontSize(9)
+          .fontColor('#B16A0A')
+          .onClick(() => {
+            this.switchTab(1);
+          })
+      }
+      .width('100%')
+      .margin({ top: 8, bottom: 2 })
+
+      ForEach(this.todayCreatedItems(), (item: StudyItem) => {
+        Row() {
+          Circle({ width: 7, height: 7 })
+            .fill(this.findSubject(item.subjectId).color)
+          Column() {
+            Text(item.title)
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(Tokens.ink)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(this.findSubject(item.subjectId).name + '  ·  下次 ' + formatShort(item.nextReviewAt))
+              .fontSize(9)
+              .fontColor(Tokens.muted)
+              .margin({ top: 3 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          .margin({ left: 10 })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .backgroundColor(Tokens.surface)
+        .borderRadius(16)
+        .borderWidth(1)
+        .borderColor('#B3FFFFFF')
+      }, (item: StudyItem) => item.id)
+    }
+    .width('100%')
   }
 
   @Builder ReviewRow(item: StudyItem) {
@@ -689,9 +801,21 @@ struct Index {
     .borderColor('#B3FFFFFF')
     .shadow({ radius: 24, color: Tokens.shadow, offsetX: 0, offsetY: 8 })
     .backdropBlur(18)
+    .scale({ x: this.pressedItemId === item.id ? 0.985 : 1, y: this.pressedItemId === item.id ? 0.985 : 1 })
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down) {
+        animateTo({ duration: 90, curve: Curve.EaseOut }, () => {
+          this.pressedItemId = item.id;
+        });
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
+          this.pressedItemId = '';
+        });
+      }
+    })
   }
 
-  @Builder ComposerPane() {
+  @Builder ComposerPane(showClose: boolean) {
     Column() {
       Row() {
         Text('记一条')
@@ -709,6 +833,19 @@ struct Index {
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.inkSoft)
             .margin({ top: 3 })
+        }
+        if (showClose) {
+          Button('关闭')
+            .height(26)
+            .fontSize(9)
+            .fontColor('#6C4B00')
+            .backgroundColor(Tokens.yellowSoft)
+            .borderRadius(13)
+            .padding({ left: 10, right: 10 })
+            .margin({ left: 10 })
+            .onClick(() => {
+              this.closeComposer();
+            })
         }
       }
       .width('100%')
@@ -997,6 +1134,8 @@ struct Index {
     .width('100%')
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Start)
+    .opacity(this.pageOpacity)
+    .translate({ x: this.pageShift })
     .padding({ left: this.isWide ? 52 : 20, right: this.isWide ? 52 : 20, top: 6, bottom: 24 })
   }
 
@@ -1068,6 +1207,8 @@ struct Index {
     .width('100%')
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Start)
+    .opacity(this.pageOpacity)
+    .translate({ x: this.pageShift })
     .padding({ left: this.isWide ? 52 : 20, right: this.isWide ? 52 : 20, bottom: 24 })
   }
 
@@ -1202,35 +1343,49 @@ struct Index {
     .width('100%')
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Start)
+    .opacity(this.pageOpacity)
+    .translate({ x: this.pageShift })
     .padding({ left: this.isWide ? 52 : 20, right: this.isWide ? 52 : 20, bottom: 24 })
   }
 
   @Builder BottomNav() {
-    Row() {
-      ForEach(this.navLabels, (label: string, index: number) => {
-        Column() {
-          Text(this.navGlyphs[index])
-            .fontSize(16)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-          Text(label)
-            .fontSize(8)
-            .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-            .margin({ top: 3 })
-        }
-        .layoutWeight(1)
-        .height(58)
-        .justifyContent(FlexAlign.Center)
-        .onClick(() => {
-          this.tab = index; if (index === 0) { this.playEntry(); }
+    Column() {
+      Row() {
+        ForEach(this.navLabels, (label: string, index: number) => {
+          Column() {
+            Text(this.navGlyphs[index])
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+            Text(label)
+              .fontSize(8)
+              .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
+              .margin({ top: 3 })
+          }
+          .layoutWeight(1)
+          .height(50)
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor(this.tab === index ? Tokens.yellowSoft : Color.Transparent)
+          .borderRadius(16)
+          .margin({ left: 3, right: 3 })
+          .scale({ x: this.tab === index ? 1.03 : 1, y: this.tab === index ? 1.03 : 1 })
+          .animation({ duration: 260, curve: Curve.EaseOut })
+          .onClick(() => {
+            this.switchTab(index);
+          })
         })
-      })
+      }
+      .width('100%')
+      .height(58)
+      .padding({ left: 8, right: 8 })
+      .backgroundColor(Tokens.surface)
+      .borderRadius(29)
+      .borderWidth(1)
+      .borderColor('#CCFFFFFF')
+      .shadow({ radius: 24, color: '#18000000', offsetX: 0, offsetY: 8 })
     }
     .width('100%')
-    .height(64)
-    .backgroundColor(Tokens.surfaceSoft)
-    .borderWidth({ top: 1 })
-    .borderColor(Tokens.line)
+    .padding({ left: 14, right: 14, bottom: 8 })
   }
 
   @Builder ReviewOverlay() {
@@ -1446,50 +1601,30 @@ struct Index {
   }
 
   @Builder ComposerOverlay() {
-    Stack({ alignContent: Alignment.Bottom }) {
+    Stack({ alignContent: Alignment.Center }) {
       Column()
         .width('100%')
         .height('100%')
         .backgroundColor(Tokens.dim)
+        .opacity(this.composerDim)
+        .backdropBlur(6)
         .onClick(() => {
           this.closeComposer();
         })
 
-      Column() {
-        Row() {
-          Text('')
-            .fontSize(24)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(Tokens.ink)
-          Blank()
-          Button('关闭')
-            .height(30)
-            .fontSize(10)
-            .fontColor('#6C4B00')
-            .backgroundColor(Tokens.yellowSoft)
-            .borderRadius(15)
-            .padding({ left: 12, right: 12 })
-            .onClick(() => {
-              this.closeComposer();
-            })
+      Scroll() {
+        Column() {
+          this.ComposerPane(true)
         }
         .width('100%')
-        .margin({ bottom: 12 })
-
-        Column() {
-          this.ComposerPane()
-        }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Start)
-        .alignItems(HorizontalAlign.Start)
+        .alignItems(HorizontalAlign.Center)
       }
-      .width('100%')
-      .height(this.isTablet ? '50%' : '88%')
+      .width(this.isWide ? 430 : '92%')
+      .constraintSize({ maxHeight: '84%' })
+      .scrollBar(BarState.Off)
       .scale({ x: this.composerScale, y: this.composerScale })
       .translate({ y: this.composerShift })
-      .padding({ left: 16, right: 16, top: 16, bottom: 12 })
-      .backgroundColor(Tokens.bg)
-      .borderRadius({ topLeft: 28, topRight: 28 })
+      .opacity(this.composerOpacity)
     }
     .width('100%')
     .height('100%')
