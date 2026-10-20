@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
-import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, createDefaultData, emptyItem, newId } from '../domain/Models';
+import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
 import { Store } from '../data/Store';
 import { scheduleNext, firstReviewAt, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
 import { ReminderService } from '../services/ReminderService';
@@ -22,7 +22,8 @@ struct Index {
   @State draftTitle: string = '';
   @State draftMode: string = 'curve';
   @State draftFixedDays: number = 3;
-  @State confirmClear: boolean = false;
+  @State newSubjectName: string = '';
+  @State calendarProgress: number = 1;
   @State todayLabel: string = '';
   @State reviewScale: number = 0.97;
   @State isTablet: boolean = false;
@@ -202,22 +203,25 @@ struct Index {
       return;
     }
     const forward = next > this.tab;
-    animateTo({ duration: 150, curve: Curve.EaseIn }, () => {
+    animateTo({ duration: 80, curve: Curve.EaseIn }, () => {
       this.pageOpacity = 0;
-      this.pageShift = forward ? -14 : 14;
+      this.pageShift = forward ? -10 : 10;
     });
     setTimeout(() => {
       this.tab = next;
       this.pageOpacity = 0;
-      this.pageShift = forward ? 22 : -22;
-      animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+      this.pageShift = next === 2 ? 0 : (forward ? 16 : -16);
+      animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
         this.pageOpacity = 1;
         this.pageShift = 0;
       });
       if (next === 0) {
         this.playEntry();
       }
-    }, 120);
+      if (next === 2) {
+        this.playCalendar();
+      }
+    }, 80);
   }
 
   private itemSubtitle(item: StudyItem): string {
@@ -409,18 +413,70 @@ struct Index {
     this.toast('设置已保存');
   }
 
-  private clearData(): void {
-    if (!this.confirmClear) {
-      this.confirmClear = true;
-      this.toast('再点一次确认清空');
+  private addSubject(): void {
+    const name = this.newSubjectName.trim();
+    if (name.length === 0) {
+      this.toast('先写科目名');
       return;
     }
-    this.items = [];
-    this.logs = [];
-    this.confirmClear = false;
+    for (let i = 0; i < this.subjects.length; i++) {
+      if (this.subjects[i].name === name) {
+        this.toast('这个科目已经有了');
+        return;
+      }
+    }
+    const subject: Subject = {
+      id: newId(),
+      name: name,
+      color: SUBJECT_COLORS[this.subjects.length % SUBJECT_COLORS.length]
+    };
+    this.subjects = [...this.subjects, subject];
+    this.draftSubjectId = subject.id;
+    this.newSubjectName = '';
+    this.persist();
+    this.toast('已添加 ' + name);
+  }
+
+  private confirmDeleteItem(item: StudyItem): void {
+    AlertDialog.show({
+      title: '删除这条记录？',
+      message: item.title,
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: '#C7422C',
+        action: () => {
+          this.deleteItem(item.id);
+        }
+      }
+    });
+  }
+
+  private deleteItem(id: string): void {
+    this.items = this.items.filter((item: StudyItem) => item.id !== id);
+    this.logs = this.logs.filter((log: ReviewLog) => log.itemId !== id);
+    if (this.reviewItem.id === id) {
+      this.showReview = false;
+    }
     this.persist();
     this.syncReminder();
-      this.toast('已清空');
+    this.toast('已删除');
+  }
+
+  private playCalendar(): void {
+    this.calendarProgress = 0;
+    animateTo({ duration: 320, curve: Curve.EaseOut }, () => {
+      this.calendarProgress = 1.12;
+    });
+    setTimeout(() => {
+      animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
+        this.calendarProgress = 1;
+      });
+    }, 320);
   }
 
   build() {
@@ -522,9 +578,7 @@ struct Index {
     }
     .width(92)
     .height('100%')
-    .backgroundColor(Tokens.surfaceSoft)
-    .borderWidth({ right: 1 })
-    .borderColor(Tokens.line)
+    .backgroundColor(Tokens.bg)
   }
 
   @Builder NavItem(index: number, glyph: string, label: string) {
@@ -575,8 +629,7 @@ struct Index {
     .width('100%')
     .height(72)
     .padding({ left: this.isWide ? 44 : 20, right: this.isWide ? 44 : 20 })
-    .borderWidth({ bottom: 1 })
-    .borderColor(Tokens.line)
+    .backgroundColor(Tokens.bg)
   }
 
   @Builder TodayPane() {
@@ -723,6 +776,9 @@ struct Index {
         .borderRadius(16)
         .borderWidth(1)
         .borderColor('#B3FFFFFF')
+        .gesture(LongPressGesture().onAction(() => {
+          this.confirmDeleteItem(item);
+        }))
       }, (item: StudyItem) => item.id)
     }
     .width('100%')
@@ -857,7 +913,7 @@ struct Index {
         .fontColor(Tokens.muted)
         .margin({ bottom: 8 })
 
-      Row({ space: 6 }) {
+      Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
         ForEach(this.subjects, (subject: Subject) => {
           Button(subject.name)
             .height(31)
@@ -868,6 +924,7 @@ struct Index {
             .borderColor(this.draftSubjectId === subject.id ? '#CCFFC531' : Tokens.line)
             .borderRadius(16)
             .padding({ left: 12, right: 12 })
+            .margin({ right: 6, bottom: 6 })
             .onClick(() => {
               this.draftSubjectId = subject.id;
             })
@@ -902,27 +959,38 @@ struct Index {
         .fontColor(Tokens.muted)
         .margin({ top: 18, bottom: 8 })
 
-      Row() {
-        Button('遗忘曲线')
-          .layoutWeight(1)
+      Stack({ alignContent: Alignment.Start }) {
+        Row()
+          .width('50%')
           .height(32)
-          .fontSize(11)
-          .fontColor(this.draftMode === 'curve' ? Tokens.ink : Tokens.muted)
-          .backgroundColor(this.draftMode === 'curve' ? Tokens.surface : Color.Transparent)
+          .backgroundColor(Tokens.surface)
           .borderRadius(9)
-          .onClick(() => {
-            this.draftMode = 'curve';
-          })
-        Button('固定间隔')
-          .layoutWeight(1)
-          .height(32)
-          .fontSize(11)
-          .fontColor(this.draftMode === 'fixed' ? Tokens.ink : Tokens.muted)
-          .backgroundColor(this.draftMode === 'fixed' ? Tokens.surface : Color.Transparent)
-          .borderRadius(9)
-          .onClick(() => {
-            this.draftMode = 'fixed';
-          })
+          .translate({ x: this.draftMode === 'curve' ? 0 : '100%' })
+          .animation({ duration: 260, curve: Curve.EaseOut })
+
+        Row() {
+          Button('遗忘曲线')
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(11)
+            .fontColor(this.draftMode === 'curve' ? Tokens.ink : Tokens.muted)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(9)
+            .onClick(() => {
+              this.draftMode = 'curve';
+            })
+          Button('固定间隔')
+            .layoutWeight(1)
+            .height(32)
+            .fontSize(11)
+            .fontColor(this.draftMode === 'fixed' ? Tokens.ink : Tokens.muted)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(9)
+            .onClick(() => {
+              this.draftMode = 'fixed';
+            })
+        }
+        .width('100%')
       }
       .width('100%')
       .padding(3)
@@ -1059,6 +1127,10 @@ struct Index {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.ink)
         Blank()
+        Text('长按删除')
+          .fontSize(9)
+          .fontColor(Tokens.mutedSoft)
+          .margin({ right: 10 })
         Text(this.items.length + ' 条')
           .fontSize(11)
           .fontColor(Tokens.muted)
@@ -1121,6 +1193,9 @@ struct Index {
               .borderRadius(18)
               .borderWidth(1)
               .borderColor('#B3FFFFFF')
+              .gesture(LongPressGesture().onAction(() => {
+                this.confirmDeleteItem(item);
+              }))
             }
           }, (item: StudyItem) => item.id)
         }
@@ -1151,58 +1226,66 @@ struct Index {
         .fontColor(Tokens.muted)
         .margin({ top: 6, bottom: 18 })
 
-      Column({ space: 8 }) {
-        ForEach(this.upcoming(), (day: DayCount) => {
-          Row() {
-            Column() {
-              Text(formatShort(day.date))
-                .fontSize(18)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(Tokens.ink)
-              Text(weekdayCN(day.date))
-                .fontSize(9)
-                .fontColor(Tokens.muted)
-                .margin({ top: 2 })
-            }
-            .width(64)
-            .alignItems(HorizontalAlign.Start)
-
+      Scroll() {
+        Column({ space: 8 }) {
+          ForEach(this.upcoming(), (day: DayCount, index: number) => {
             Row() {
-              if (day.count === 0) {
-                Text('没有安排')
-                  .fontSize(11)
-                  .fontColor(Tokens.mutedSoft)
-              } else {
-                ForEach(this.items.filter((value: StudyItem) => value.status === 'active' && startOfDay(new Date(value.nextReviewAt)).getTime() === day.date), (item: StudyItem) => {
-                  Row() {
-                    Circle({ width: 6, height: 6 })
-                      .fill(this.findSubject(item.subjectId).color)
-                    Text(item.title)
-                      .fontSize(11)
-                      .fontColor(Tokens.inkSoft)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .margin({ left: 7 })
-                  }
-                  .padding({ left: 9, right: 9, top: 6, bottom: 6 })
-                  .backgroundColor(Tokens.surface)
-                  .borderRadius(10)
-                  .margin({ right: 6 })
-                }, (item: StudyItem) => item.id)
+              Column() {
+                Text(formatShort(day.date))
+                  .fontSize(18)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(Tokens.ink)
+                Text(weekdayCN(day.date))
+                  .fontSize(9)
+                  .fontColor(Tokens.muted)
+                  .margin({ top: 2 })
               }
+              .width(64)
+              .alignItems(HorizontalAlign.Start)
+
+              Row() {
+                if (day.count === 0) {
+                  Text('没有安排')
+                    .fontSize(11)
+                    .fontColor(Tokens.mutedSoft)
+                } else {
+                  ForEach(this.items.filter((value: StudyItem) => value.status === 'active' && startOfDay(new Date(value.nextReviewAt)).getTime() === day.date), (item: StudyItem) => {
+                    Row() {
+                      Circle({ width: 6, height: 6 })
+                        .fill(this.findSubject(item.subjectId).color)
+                      Text(item.title)
+                        .fontSize(11)
+                        .fontColor(Tokens.inkSoft)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .margin({ left: 7 })
+                    }
+                    .padding({ left: 9, right: 9, top: 6, bottom: 6 })
+                    .backgroundColor(Tokens.surface)
+                    .borderRadius(10)
+                    .margin({ right: 6 })
+                  }, (item: StudyItem) => item.id)
+                }
+              }
+              .layoutWeight(1)
             }
-            .layoutWeight(1)
-          }
-          .width('100%')
-          .padding(16)
-          .backgroundColor(Tokens.surfaceSoft)
-          .borderRadius(18)
-          .borderWidth(1)
-          .borderColor('#B3FFFFFF')
-        }, (day: DayCount) => '' + day.date)
+            .width('100%')
+            .padding(16)
+            .backgroundColor(Tokens.surfaceSoft)
+            .borderRadius(18)
+            .borderWidth(1)
+            .borderColor('#B3FFFFFF')
+            .translate({ x: (1 - this.calendarProgress) * (54 + index * 9) })
+            .opacity(Math.min(1, this.calendarProgress))
+          }, (day: DayCount) => '' + day.date)
+        }
+        .width('100%')
+        .padding({ bottom: 24 })
       }
       .width('100%')
-      Blank()
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1220,10 +1303,12 @@ struct Index {
         .fontColor(Tokens.ink)
         .margin({ top: 24, bottom: 18 })
 
-      Column() {
-        Row() {
+      Scroll() {
+        Column({ space: 16 }) {
           Column() {
-            Text('到点提醒我')
+            Row() {
+              Column() {
+                Text('到点提醒我')
               .fontSize(14)
               .fontWeight(FontWeight.Medium)
               .fontColor(Tokens.ink)
@@ -1308,26 +1393,68 @@ struct Index {
       .borderColor('#B3FFFFFF')
 
       Column() {
-        Text('数据')
+        Text('科目')
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.muted)
           .margin({ bottom: 10 })
-        Button(this.confirmClear ? '再点一次确认' : '清空所有记录')
-          .width('100%')
-          .height(42)
-          .fontSize(12)
-          .fontColor(this.confirmClear ? '#C7422C' : Tokens.inkSoft)
-          .backgroundColor(this.confirmClear ? '#1AFF6542' : Tokens.surface)
-          .borderWidth(1)
-          .borderColor(this.confirmClear ? '#66FF6542' : Tokens.line)
-          .borderRadius(13)
-          .onClick(() => {
-            this.clearData();
-          })
+
+        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+          ForEach(this.subjects, (subject: Subject) => {
+            Row() {
+              Circle({ width: 7, height: 7 })
+                .fill(subject.color)
+              Text(subject.name)
+                .fontSize(10)
+                .fontColor(Tokens.inkSoft)
+                .margin({ left: 6 })
+            }
+            .padding({ left: 10, right: 10, top: 7, bottom: 7 })
+            .backgroundColor(Tokens.surface)
+            .borderRadius(12)
+            .borderWidth(1)
+            .borderColor('#B3FFFFFF')
+            .margin({ right: 6, bottom: 6 })
+          }, (subject: Subject) => subject.id)
+        }
+        .width('100%')
+
+        Row() {
+          TextInput({ placeholder: '新增科目，如政治', text: this.newSubjectName })
+            .layoutWeight(1)
+            .height(36)
+            .fontSize(12)
+            .fontColor(Tokens.ink)
+            .placeholderColor(Tokens.mutedSoft)
+            .backgroundColor(Tokens.surface)
+            .borderRadius(10)
+            .padding({ left: 12, right: 12 })
+            .onChange((value: string) => {
+              this.newSubjectName = value;
+            })
+          Button('添加')
+            .height(36)
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#3D2A00')
+            .backgroundColor(Tokens.yellow)
+            .borderRadius(10)
+            .padding({ left: 16, right: 16 })
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.addSubject();
+            })
+        }
+        .width('100%')
+        .margin({ top: 6 })
+
+        Text('颜色按顺序自动分配，可继续添加。')
+          .fontSize(8)
+          .fontColor(Tokens.mutedSoft)
+          .margin({ top: 8 })
       }
       .width('100%')
-      .margin({ top: 16 })
+      .alignItems(HorizontalAlign.Start)
       .padding(18)
       .backgroundColor(Tokens.surfaceSoft)
       .borderRadius(22)
@@ -1338,7 +1465,13 @@ struct Index {
         .fontSize(9)
         .fontColor(Tokens.mutedSoft)
         .margin({ top: 18 })
-      Blank()
+        }
+        .width('100%')
+        .padding({ bottom: 24 })
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .layoutWeight(1)

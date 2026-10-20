@@ -4,6 +4,16 @@ export interface Subject {
   color: string;
 }
 
+export const SUBJECT_COLORS: string[] = [
+  '#E8A21A',
+  '#4A90D9',
+  '#D95F3F',
+  '#8E7CC3',
+  '#5AA469',
+  '#E07A5F',
+  '#7A8B99'
+];
+
 export interface StudyItem {
   id: string;
   subjectId: string;
@@ -82,10 +92,10 @@ export function emptyItem(): StudyItem {
 
 export function createDefaultData(): AppData {
   const subjects: Subject[] = [
-    { id: 'math', name: '数学', color: '#FF6542' },
-    { id: 'english', name: '英语', color: '#E0A92E' },
-    { id: 'physics', name: '物理', color: '#7E9FB5' },
-    { id: 'chinese', name: '语文', color: '#D98F87' }
+    { id: 'math', name: '数学', color: '#E8A21A' },
+    { id: 'english', name: '英语', color: '#4A90D9' },
+    { id: 'politics', name: '政治', color: '#D95F3F' },
+    { id: 'major', name: '专业课', color: '#8E7CC3' }
   ];
   return {
     subjects: subjects,
