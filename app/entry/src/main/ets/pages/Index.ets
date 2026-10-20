@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { promptAction, LengthMetrics } from '@kit.ArkUI';
+import { promptAction, LengthMetrics, KeyboardAvoidMode } from '@kit.ArkUI';
 import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
 import { Store } from '../data/Store';
 import { scheduleNext, firstReviewAt, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
@@ -79,6 +79,7 @@ struct Index {
   private readonly curveNodes: number[] = [0, 1, 2, 3, 4, 5];
 
   aboutToAppear(): void {
+    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.NONE);
     const now = new Date();
     this.todayLabel = formatFull(now.getTime()) + '  ·  ' + weekdayCN(now.getTime());
     this.loadData();
@@ -1236,7 +1237,6 @@ struct Index {
         .borderRadius(14)
         .padding({ left: 14, right: 14 })
         .focusBox({ margin: LengthMetrics.vp(0), strokeWidth: LengthMetrics.vp(0) })
-        .animation({ duration: 180, curve: Curve.EaseOut })
         .onFocus(() => {
           this.titleFocused = true;
         })
