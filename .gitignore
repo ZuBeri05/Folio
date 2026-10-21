@@ -9,3 +9,5 @@ build/
 *.har
 design/*.png
 **/.dsh-ops-update-*.lock
+
+.signing-backup/
