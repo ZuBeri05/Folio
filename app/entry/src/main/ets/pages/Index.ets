@@ -82,10 +82,10 @@ struct Index {
     $r('app.media.ic_settings_off')
   ];
   private readonly navIcons: Resource[] = [
-    $r('app.media.ic_banana_on'),
-    $r('app.media.ic_lemon_on'),
-    $r('app.media.ic_carrot_on'),
-    $r('app.media.ic_watermelon_on')
+    $r('app.media.ic_banana'),
+    $r('app.media.ic_lemon'),
+    $r('app.media.ic_carrot'),
+    $r('app.media.ic_watermelon')
   ];
   private readonly curveNodes: number[] = [0, 1, 2, 3, 4, 5];
 
@@ -947,13 +947,13 @@ struct Index {
 
   @Builder Rail() {
     Column() {
-      Column({ space: 10 }) {
+      Column({ space: 34 }) {
         ForEach([0, 1, 2, 3], (index: number) => {
           this.NavItem(index)
         })
       }
       .width(112)
-      .margin({ top: 40 })
+      .margin({ top: 56 })
 
       Blank()
       Text('v1.0')
@@ -970,19 +970,19 @@ struct Index {
   @Builder NavItem(index: number) {
     Column() {
       Image(this.navIcons[index])
-        .width(28)
-        .height(28)
+        .width(30)
+        .height(30)
         .objectFit(ImageFit.Contain)
         .opacity(this.tab === index ? 1 : 0.48)
       Text(this.navLabel(index))
-        .fontSize(10.5)
+        .fontSize(11.5)
         .fontWeight(this.tab === index ? FontWeight.Bold : FontWeight.Medium)
         .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
         .margin({ top: 4 })
         .animation({ duration: 180, curve: Curve.EaseOut })
     }
     .width(112)
-    .height(72)
+    .height(88)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.switchTab(index);
@@ -1218,7 +1218,7 @@ struct Index {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 4 })
         Text(this.itemSubtitle(item))
-          .fontSize(10.5)
+          .fontSize(11.5)
           .fontColor(Tokens.muted)
           .margin({ top: 4 })
         Row() {
@@ -2423,7 +2423,7 @@ struct Index {
             .fontColor(Tokens.muted)
           Blank()
           Button(this.t('close'))
-            .height(28)
+            .height(30)
             .fontSize(9)
             .fontColor('#6C4B00')
             .backgroundColor(Tokens.yellowSoft)
