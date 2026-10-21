@@ -81,6 +81,12 @@ struct Index {
     $r('app.media.ic_calendar_off'),
     $r('app.media.ic_settings_off')
   ];
+  private readonly navIcons: Resource[] = [
+    $r('app.media.ic_banana_on'),
+    $r('app.media.ic_lemon_on'),
+    $r('app.media.ic_carrot_on'),
+    $r('app.media.ic_watermelon_on')
+  ];
   private readonly curveNodes: number[] = [0, 1, 2, 3, 4, 5];
 
   aboutToAppear(): void {
@@ -336,12 +342,17 @@ struct Index {
   }
 
   private intervalHint(rating: string): string {
-    const result = scheduleNext(this.reviewItem, rating, new Date());
+    const result = scheduleNext(this.reviewItem, rating, new Date(), this.settings.curveDays);
     return result.nextIntervalDays === 1 ? this.t('tomorrow') : this.t('daysAfter', result.nextIntervalDays);
   }
 
   private curveLabels(): string[] {
-    return [this.t('start'), this.t('first'), this.t('second'), this.t('todayNode'), this.t('nextNode'), this.t('afterNode')];
+    const labels: string[] = [this.t('todayNode')];
+    const safe = this.settings.curveDays.length >= 2 ? this.settings.curveDays : [1, 2, 4, 7, 15];
+    for (let i = 0; i < 5; i++) {
+      labels.push(this.t('days', safe[Math.min(i, safe.length - 1)]));
+    }
+    return labels;
   }
 
   private openReview(item: StudyItem): void {
@@ -374,7 +385,7 @@ struct Index {
   private commitReview(rating: string): void {
     const item = this.reviewItem;
     const now = new Date();
-    const result = scheduleNext(item, rating, now);
+    const result = scheduleNext(item, rating, now, this.settings.curveDays);
     const updated: StudyItem = {
       id: item.id,
       subjectId: item.subjectId,
@@ -418,7 +429,7 @@ struct Index {
       return;
     }
     const now = new Date();
-    const firstAt = firstReviewAt(this.draftMode, this.draftFixedDays, now);
+    const firstAt = firstReviewAt(this.draftMode, this.draftFixedDays, now, this.settings.curveDays);
     const item: StudyItem = {
       id: newId(),
       subjectId: this.draftSubjectId,
@@ -450,7 +461,8 @@ struct Index {
       reminderTime: this.settings.reminderTime,
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
-      language: this.settings.language
+      language: this.settings.language,
+      curveDays: this.settings.curveDays
     };
     this.persist();
     this.syncReminder();
@@ -462,7 +474,8 @@ struct Index {
       reminderTime: value,
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
-      language: this.settings.language
+      language: this.settings.language,
+      curveDays: this.settings.curveDays
     };
   }
 
@@ -483,7 +496,8 @@ struct Index {
       reminderTime: this.settings.reminderTime,
       subjectTimes: this.settings.subjectTimes,
       themeIndex: index,
-      language: this.settings.language
+      language: this.settings.language,
+      curveDays: this.settings.curveDays
     };
     this.persist();
     this.syncSystemBars();
@@ -536,13 +550,32 @@ struct Index {
     }
   }
 
+  private updateCurveDay(index: number, value: string): void {
+    const days = Number(value);
+    if (isNaN(days) || days < 1 || days > 365) {
+      return;
+    }
+    const next = this.settings.curveDays.slice();
+    next[index] = Math.round(days);
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language,
+      curveDays: next
+    };
+    this.persist();
+  }
+
   private setLanguage(code: string): void {
     this.settings = {
       reminderEnabled: this.settings.reminderEnabled,
       reminderTime: this.settings.reminderTime,
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
-      language: code
+      language: code,
+      curveDays: this.settings.curveDays
     };
     this.todayLabel = this.localizedToday();
     this.persist();
@@ -914,33 +947,13 @@ struct Index {
 
   @Builder Rail() {
     Column() {
-      Column() {
-        Image($r('app.media.app_icon'))
-          .width(44)
-          .height(44)
-          .borderRadius(14)
-        Text('Folio')
-          .fontSize(17)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.ink)
-          .letterSpacing(2)
-          .margin({ top: 8 })
-        Text('DAILY REVIEW')
-          .fontSize(6)
-          .fontColor(Tokens.mutedSoft)
-          .letterSpacing(1.4)
-          .margin({ top: 2 })
-      }
-      .margin({ top: 24 })
-      .alignItems(HorizontalAlign.Center)
-
-      Column({ space: 9 }) {
+      Column({ space: 10 }) {
         ForEach([0, 1, 2, 3], (index: number) => {
-          this.NavItem(index, this.navLabel(index))
+          this.NavItem(index)
         })
       }
-      .width(64)
-      .margin({ top: 42 })
+      .width(112)
+      .margin({ top: 40 })
 
       Blank()
       Text('v1.0')
@@ -948,26 +961,28 @@ struct Index {
         .fontColor(Tokens.mutedSoft)
         .margin({ bottom: 20 })
     }
-    .width(92)
+    .width(124)
     .height('100%')
     .backgroundColor(this.pageBg())
     .animation({ duration: 320, curve: Curve.EaseOut })
   }
 
-  @Builder NavItem(index: number, label: string) {
+  @Builder NavItem(index: number) {
     Column() {
-      Image(this.tab === index ? this.navIconsOn[index] : this.navIconsOff[index])
-        .width(21)
-        .height(21)
+      Image(this.navIcons[index])
+        .width(28)
+        .height(28)
         .objectFit(ImageFit.Contain)
-      Text(label)
-        .fontSize(9)
+        .opacity(this.tab === index ? 1 : 0.48)
+      Text(this.navLabel(index))
+        .fontSize(10.5)
+        .fontWeight(this.tab === index ? FontWeight.Bold : FontWeight.Medium)
         .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
-        .margin({ top: 3 })
+        .margin({ top: 4 })
         .animation({ duration: 180, curve: Curve.EaseOut })
     }
-    .width(64)
-    .height(58)
+    .width(112)
+    .height(72)
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.switchTab(index);
@@ -1043,6 +1058,11 @@ struct Index {
               .translate({ y: (1 - this.calendarProgress) * (18 + index * 4) })
               .opacity(Math.min(1, this.calendarProgress))
             }, (item: StudyItem) => item.id)
+          }
+          if (this.dueItems().length === 0 && this.todayCreatedItems().length > 0 && !this.isWide) {
+            Row()
+              .width('100%')
+              .height(90)
           }
           if (this.todayCreatedItems().length > 0) {
             this.TodayLogged()
@@ -1849,81 +1869,34 @@ struct Index {
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
-        Text(this.t('palette'))
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Tokens.muted)
-        Row({ space: 8 }) {
-          ForEach(['奶油', '雾蓝', '暖砂', '鼠尾草'], (name: string, index: number) => {
-            Column() {
-              Row({ space: 6 }) {
-                Row()
-                  .width(26)
-                  .height(26)
-                  .backgroundColor(this.themeAccent(index))
-                  .borderRadius(8)
-                Row({ space: 3 }) {
-                  ForEach([0, 1, 2, 3], (slot: number) => {
-                    Circle({ width: 13, height: 13 })
-                      .fill(this.pageColors(index)[slot])
-                      .stroke('#44000000')
-                      .strokeWidth(1)
-                  })
-                }
-              }
-            }
-            .layoutWeight(1)
-            .height(46)
-            .justifyContent(FlexAlign.Center)
-            .backgroundColor(Tokens.surface)
-            .borderRadius(12)
-            .borderWidth(this.settings.themeIndex === index ? 2 : 1)
-            .borderColor(this.settings.themeIndex === index ? '#E8A21A' : '#E6DCC8')
-            .scale({ x: this.settings.themeIndex === index ? 1.02 : 1, y: this.settings.themeIndex === index ? 1.02 : 1 })
-            .animation({ duration: 240, curve: Curve.EaseOut })
-            .onClick(() => {
-              this.updateTheme(index);
-            })
-          }, (name: string, index: number) => name)
-        }
-        .width('100%')
-        .margin({ top: 10 })
-        .margin({ top: 10 })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding(18)
-      .backgroundColor(Tokens.surfaceSoft)
-      .borderRadius(22)
-      .borderWidth(1)
-      .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 14 })
-      .opacity(Math.min(1, this.calendarProgress))
-
-      Column() {
-        Text(this.t('language'))
+        Text(this.t('curveDaysTitle'))
           .fontSize(11)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.muted)
           .margin({ bottom: 10 })
         Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-          ForEach(I18n.languages, (option: LanguageOption) => {
-            Button(option.name)
-              .height(30)
-              .fontSize(10)
-              .fontColor(this.settings.language === option.code ? '#3D2A00' : Tokens.inkSoft)
-              .backgroundColor(this.settings.language === option.code ? Tokens.yellow : Tokens.surface)
-              .borderWidth(1)
-              .borderColor(this.settings.language === option.code ? '#CCFFC531' : '#E6DCC8')
-              .borderRadius(15)
-              .padding({ left: 12, right: 12 })
-              .margin({ right: 6, bottom: 6 })
-              .scale({ x: this.settings.language === option.code ? 1.04 : 1, y: this.settings.language === option.code ? 1.04 : 1 })
-              .animation({ duration: 180, curve: Curve.EaseOut })
-              .onClick(() => {
-                this.setLanguage(option.code);
-              })
-          }, (option: LanguageOption) => option.code)
+          ForEach([0, 1, 2, 3, 4, 5, 6], (index: number) => {
+            Column() {
+              Text((index + 1) + '')
+                .fontSize(8)
+                .fontColor(Tokens.mutedSoft)
+                .margin({ bottom: 3 })
+              TextInput({ text: this.settings.curveDays[index] + '' })
+                .width(48)
+                .height(32)
+                .fontSize(12)
+                .fontColor(Tokens.ink)
+                .textAlign(TextAlign.Center)
+                .backgroundColor(Tokens.surface)
+                .borderWidth(1)
+                .borderColor('#E6DCC8')
+                .borderRadius(8)
+                .onChange((value: string) => {
+                  this.updateCurveDay(index, value);
+                })
+            }
+            .margin({ right: 8, bottom: 8 })
+          })
         }
         .width('100%')
       }
@@ -1934,7 +1907,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 18 })
+      .translate({ y: (1 - this.calendarProgress) * 16 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
@@ -2013,6 +1986,96 @@ struct Index {
       .translate({ y: (1 - this.calendarProgress) * 20 })
       .opacity(Math.min(1, this.calendarProgress))
 
+      Column() {
+        Text(this.t('palette'))
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.muted)
+        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
+          ForEach(['奶油', '雾蓝', '暖砂', '鼠尾草'], (name: string, index: number) => {
+            Column() {
+              Row({ space: 6 }) {
+                Row()
+                  .width(26)
+                  .height(26)
+                  .backgroundColor(this.themeAccent(index))
+                  .borderRadius(8)
+                Row({ space: 3 }) {
+                  ForEach([0, 1, 2, 3], (slot: number) => {
+                    Circle({ width: 13, height: 13 })
+                      .fill(this.pageColors(index)[slot])
+                      .stroke('#44000000')
+                      .strokeWidth(1)
+                  })
+                }
+              }
+            }
+            .width(this.isTablet ? '24%' : '48%')
+            .height(46)
+            .margin({ bottom: 8 })
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor(Tokens.surface)
+            .borderRadius(12)
+            .borderWidth(this.settings.themeIndex === index ? 2 : 1)
+            .borderColor(this.settings.themeIndex === index ? '#E8A21A' : '#E6DCC8')
+            .scale({ x: this.settings.themeIndex === index ? 1.02 : 1, y: this.settings.themeIndex === index ? 1.02 : 1 })
+            .animation({ duration: 240, curve: Curve.EaseOut })
+            .onClick(() => {
+              this.updateTheme(index);
+            })
+          }, (name: string, index: number) => name)
+        }
+        .width('100%')
+        .margin({ top: 10 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(18)
+      .backgroundColor(Tokens.surfaceSoft)
+      .borderRadius(22)
+      .borderWidth(1)
+      .borderColor('#B3FFFFFF')
+      .translate({ y: (1 - this.calendarProgress) * 14 })
+      .opacity(Math.min(1, this.calendarProgress))
+
+      Column() {
+        Text(this.t('language'))
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.muted)
+          .margin({ bottom: 10 })
+        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+          ForEach(I18n.languages, (option: LanguageOption) => {
+            Button(option.name)
+              .height(30)
+              .fontSize(10)
+              .fontColor(this.settings.language === option.code ? '#3D2A00' : Tokens.inkSoft)
+              .backgroundColor(this.settings.language === option.code ? Tokens.yellow : Tokens.surface)
+              .borderWidth(1)
+              .borderColor(this.settings.language === option.code ? '#CCFFC531' : '#E6DCC8')
+              .borderRadius(15)
+              .padding({ left: 12, right: 12 })
+              .margin({ right: 6, bottom: 6 })
+              .scale({ x: this.settings.language === option.code ? 1.04 : 1, y: this.settings.language === option.code ? 1.04 : 1 })
+              .animation({ duration: 180, curve: Curve.EaseOut })
+              .onClick(() => {
+                this.setLanguage(option.code);
+              })
+          }, (option: LanguageOption) => option.code)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(18)
+      .backgroundColor(Tokens.surfaceSoft)
+      .borderRadius(22)
+      .borderWidth(1)
+      .borderColor('#B3FFFFFF')
+      .translate({ y: (1 - this.calendarProgress) * 18 })
+      .opacity(Math.min(1, this.calendarProgress))
+
+
       Text(this.t('footer'))
         .fontSize(9)
         .fontColor(Tokens.mutedSoft)
@@ -2041,10 +2104,11 @@ struct Index {
     Row() {
       ForEach([0, 1, 2, 3], (index: number) => {
         Column() {
-          Image(this.tab === index ? this.navIconsOn[index] : this.navIconsOff[index])
-            .width(21)
-            .height(21)
+          Image(this.navIcons[index])
+            .width(22)
+            .height(22)
             .objectFit(ImageFit.Contain)
+            .opacity(this.tab === index ? 1 : 0.48)
           Text(this.navLabel(index))
             .fontSize(8)
             .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
@@ -2052,19 +2116,22 @@ struct Index {
             .animation({ duration: 180, curve: Curve.EaseOut })
         }
         .layoutWeight(1)
-        .height(66)
+        .height(62)
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
           this.switchTab(index);
         })
       })
     }
-    .width('100%')
-    .height(66)
-    .backgroundColor(this.pageBg())
-    .animation({ duration: 240, curve: Curve.EaseOut })
-    .borderWidth({ top: 1 })
-    .borderColor(Tokens.line)
+    .width('92%')
+    .height(60)
+    .padding({ left: 8, right: 8 })
+    .backgroundColor(Tokens.surface)
+    .borderRadius(30)
+    .borderWidth(1)
+    .borderColor('#CCFFFFFF')
+    .shadow({ radius: 22, color: '#1A000000', offsetX: 0, offsetY: 8 })
+    .margin({ bottom: 18 })
   }
 
   @Builder ReviewOverlay() {

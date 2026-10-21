@@ -25,12 +25,14 @@ export function daysBetween(from: number, to: Date): number {
   return Math.max(0, Math.round((b - a) / DAY_MS));
 }
 
-export function firstReviewAt(mode: string, fixedDays: number, now: Date): number {
-  const days = mode === 'fixed' ? Math.max(1, fixedDays) : 1;
+export function firstReviewAt(mode: string, fixedDays: number, now: Date, curveDays: number[] = CURVE): number {
+  const safeCurve = curveDays.length >= 2 ? curveDays : CURVE;
+  const days = mode === 'fixed' ? Math.max(1, fixedDays) : Math.max(1, safeCurve[0]);
   return addDays(startOfDay(now), days).getTime();
 }
 
-export function scheduleNext(item: StudyItem, rating: string, now: Date): ReviewResult {
+export function scheduleNext(item: StudyItem, rating: string, now: Date, curveDays: number[] = CURVE): ReviewResult {
+  const curve = curveDays.length >= 2 ? curveDays : CURVE;
   const previous = Math.max(1, item.currentIntervalDays);
   let nextInterval = previous;
   let nextStage = item.curveStage;
@@ -52,8 +54,8 @@ export function scheduleNext(item: StudyItem, rating: string, now: Date): Review
       nextStage = item.curveStage;
       nextInterval = Math.max(1, Math.round(previous * 0.75));
     } else {
-      nextStage = Math.min(CURVE.length - 1, item.curveStage + 1);
-      nextInterval = CURVE[nextStage];
+      nextStage = Math.min(curve.length - 1, item.curveStage + 1);
+      nextInterval = Math.max(1, curve[nextStage]);
     }
   }
 

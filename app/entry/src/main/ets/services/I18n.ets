@@ -217,6 +217,8 @@ export class I18n {
     "toastSubjectUsed", "这个科目下还有 {0} 条记录",
     "toastSubjectDeleted", "已删除 {0}",
     "toastDeleted", "已删除"
+,
+    "curveDaysTitle", "遗忘曲线天数"
   ]);
 
   private static readonly en: Map<string, string> = I18n.make([
@@ -247,7 +249,7 @@ export class I18n {
     "times",
     "{0} times",
     "schedules",
-    "{0} schedules",
+    "{0} event(s)",
     "todayTitle",
     "Today's review",
     "todayEmptyTitle",
@@ -414,6 +416,8 @@ export class I18n {
     "toastSubjectUsed", "This subject still has {0} records",
     "toastSubjectDeleted", "Deleted {0}",
     "toastDeleted", "Deleted"
+,
+    "curveDaysTitle", "Spaced repetition days"
   ]);
 
   private static readonly ja: Map<string, string> = I18n.make([

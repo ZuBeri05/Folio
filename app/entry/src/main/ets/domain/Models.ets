@@ -50,6 +50,7 @@ export interface Settings {
   subjectTimes: SubjectTime[];
   themeIndex: number;
   language: string;
+  curveDays: number[];
 }
 
 export interface AppData {
@@ -108,7 +109,8 @@ export function createDefaultData(): AppData {
       reminderTime: '20:00',
       subjectTimes: [],
       themeIndex: 0,
-      language: 'zh'
+      language: 'zh',
+      curveDays: [1, 2, 4, 7, 15, 30, 60]
     }
   };
 }

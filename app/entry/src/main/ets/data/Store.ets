@@ -23,6 +23,9 @@ export class Store {
       if (typeof parsed.settings.language !== 'string') {
         parsed.settings.language = 'zh';
       }
+      if (!parsed.settings.curveDays || parsed.settings.curveDays.length < 2) {
+        parsed.settings.curveDays = [1, 2, 4, 7, 15, 30, 60];
+      }
       for (let i = 0; i < parsed.subjects.length; i++) {
         const subject = parsed.subjects[i];
         if (subject.id === 'math') {
