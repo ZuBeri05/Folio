@@ -2110,10 +2110,6 @@ struct Index {
       .opacity(Math.min(1, this.calendarProgress))
 
 
-      Text(this.t('footer'))
-        .fontSize(9)
-        .fontColor(Tokens.mutedSoft)
-        .margin({ top: 18 })
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
