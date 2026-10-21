@@ -65,6 +65,10 @@ struct Index {
   @State confirmSubjectId: string = '';
   @State confirmItemId: string = '';
   @State confirmScale: number = 1;
+  @State showCurvePicker: boolean = false;
+  @State curvePickIndex: number = 0;
+  @State curvePickValue: number = 1;
+  @State curvePickScale: number = 1;
   private reviewBusy: boolean = false;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
@@ -82,10 +86,16 @@ struct Index {
     $r('app.media.ic_settings_off')
   ];
   private readonly navIcons: Resource[] = [
-    $r('app.media.ic_banana'),
-    $r('app.media.ic_lemon'),
-    $r('app.media.ic_carrot'),
-    $r('app.media.ic_watermelon')
+    $r('app.media.ic_banana_on'),
+    $r('app.media.ic_lemon_on'),
+    $r('app.media.ic_carrot_on'),
+    $r('app.media.ic_watermelon_on')
+  ];
+  private readonly navIconsMuted: Resource[] = [
+    $r('app.media.ic_banana_off'),
+    $r('app.media.ic_lemon_off'),
+    $r('app.media.ic_carrot_off'),
+    $r('app.media.ic_watermelon_off')
   ];
   private readonly curveNodes: number[] = [0, 1, 2, 3, 4, 5];
 
@@ -552,7 +562,7 @@ struct Index {
 
   private updateCurveDay(index: number, value: string): void {
     const days = Number(value);
-    if (isNaN(days) || days < 1 || days > 365) {
+    if (isNaN(days) || days < 1 || days > 90) {
       return;
     }
     const next = this.settings.curveDays.slice();
@@ -566,6 +576,25 @@ struct Index {
       curveDays: next
     };
     this.persist();
+  }
+
+  private openCurvePicker(index: number): void {
+    this.curvePickIndex = index;
+    this.curvePickValue = this.settings.curveDays[index];
+    this.showCurvePicker = true;
+    this.curvePickScale = 0.94;
+    animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+      this.curvePickScale = 1;
+    });
+  }
+
+  private closeCurvePicker(): void {
+    this.showCurvePicker = false;
+  }
+
+  private confirmCurvePicker(): void {
+    this.updateCurveDay(this.curvePickIndex, this.curvePickValue + '');
+    this.showCurvePicker = false;
   }
 
   private setLanguage(code: string): void {
@@ -893,6 +922,9 @@ struct Index {
       if (this.showConfirm) {
         this.ConfirmOverlay()
       }
+      if (this.showCurvePicker) {
+        this.CurvePickerOverlay()
+      }
     }
     .width('100%')
     .height('100%')
@@ -969,11 +1001,11 @@ struct Index {
 
   @Builder NavItem(index: number) {
     Column() {
-      Image(this.navIcons[index])
+      Image(this.tab === index ? this.navIcons[index] : this.navIconsMuted[index])
         .width(30)
         .height(30)
         .objectFit(ImageFit.Contain)
-        .opacity(this.tab === index ? 1 : 0.48)
+
       Text(this.navLabel(index))
         .fontSize(11.5)
         .fontWeight(this.tab === index ? FontWeight.Bold : FontWeight.Medium)
@@ -1881,19 +1913,21 @@ struct Index {
                 .fontSize(8)
                 .fontColor(Tokens.mutedSoft)
                 .margin({ bottom: 3 })
-              TextInput({ text: this.settings.curveDays[index] + '' })
-                .width(48)
-                .height(32)
-                .fontSize(12)
-                .fontColor(Tokens.ink)
-                .textAlign(TextAlign.Center)
-                .backgroundColor(Tokens.surface)
-                .borderWidth(1)
-                .borderColor('#E6DCC8')
-                .borderRadius(8)
-                .onChange((value: string) => {
-                  this.updateCurveDay(index, value);
-                })
+              Stack({ alignContent: Alignment.Center }) {
+                Text(this.settings.curveDays[index] + '')
+                  .fontSize(12)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(Tokens.ink)
+              }
+              .width(48)
+              .height(32)
+              .backgroundColor(Tokens.surface)
+              .borderWidth(1)
+              .borderColor('#E6DCC8')
+              .borderRadius(8)
+              .onClick(() => {
+                this.openCurvePicker(index);
+              })
             }
             .margin({ right: 8, bottom: 8 })
           })
@@ -2104,11 +2138,11 @@ struct Index {
     Row() {
       ForEach([0, 1, 2, 3], (index: number) => {
         Column() {
-          Image(this.navIcons[index])
+          Image(this.tab === index ? this.navIcons[index] : this.navIconsMuted[index])
             .width(22)
             .height(22)
             .objectFit(ImageFit.Contain)
-            .opacity(this.tab === index ? 1 : 0.48)
+    
           Text(this.navLabel(index))
             .fontSize(8)
             .fontColor(this.tab === index ? '#6C4B00' : Tokens.mutedSoft)
@@ -2345,6 +2379,94 @@ struct Index {
     .borderRadius(22)
     .borderWidth(1)
     .borderColor('#FFFFFF')
+  }
+
+  @Builder CurvePickerOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Tokens.dim)
+        .backdropBlur(6)
+        .onClick(() => {
+          this.closeCurvePicker();
+        })
+
+      Column() {
+        Text(this.t('curveDayTitle', this.curvePickIndex + 1))
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.ink)
+          .width('100%')
+        Text(this.curvePickValue + ' ' + this.t('dayUnit'))
+          .fontSize(34)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.yellow)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ top: 12, bottom: 8 })
+        Slider({
+          value: this.curvePickValue,
+          min: 1,
+          max: 90,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .width('100%')
+          .selectedColor(Tokens.yellow)
+          .blockColor(Tokens.yellow)
+          .trackColor('#E6DCC8')
+          .onChange((value: number, mode: SliderChangeMode) => {
+            this.curvePickValue = Math.round(value);
+          })
+        Row() {
+          Text('1')
+            .fontSize(9)
+            .fontColor(Tokens.mutedSoft)
+          Blank()
+          Text('90')
+            .fontSize(9)
+            .fontColor(Tokens.mutedSoft)
+        }
+        .width('100%')
+
+        Row({ space: 10 }) {
+          Button(this.t('cancel'))
+            .layoutWeight(1)
+            .height(42)
+            .fontSize(12)
+            .fontColor(Tokens.inkSoft)
+            .backgroundColor(Tokens.surfaceSoft)
+            .borderRadius(12)
+            .onClick(() => {
+              this.closeCurvePicker();
+            })
+          Button(this.t('save'))
+            .layoutWeight(1)
+            .height(42)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#3D2A00')
+            .backgroundColor(Tokens.yellow)
+            .borderRadius(12)
+            .onClick(() => {
+              this.confirmCurvePicker();
+            })
+        }
+        .width('100%')
+        .margin({ top: 18 })
+      }
+      .width(this.isWide ? 420 : '84%')
+      .padding(24)
+      .backgroundColor(Tokens.surface)
+      .borderRadius(24)
+      .borderWidth(1)
+      .borderColor('#CCFFFFFF')
+      .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
+      .scale({ x: this.curvePickScale, y: this.curvePickScale })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder ConfirmOverlay() {

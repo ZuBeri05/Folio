@@ -219,6 +219,8 @@ export class I18n {
     "toastDeleted", "已删除"
 ,
     "curveDaysTitle", "遗忘曲线天数"
+,
+    "curveDayTitle", "第 {0} 次间隔"
   ]);
 
   private static readonly en: Map<string, string> = I18n.make([
@@ -418,6 +420,8 @@ export class I18n {
     "toastDeleted", "Deleted"
 ,
     "curveDaysTitle", "Spaced repetition days"
+,
+    "curveDayTitle", "Interval {0}"
   ]);
 
   private static readonly ja: Map<string, string> = I18n.make([
