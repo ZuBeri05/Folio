@@ -828,11 +828,15 @@ git commit -m "feat: run idempotent FSRS migration in Store"
 **Files:**
 - Modify: app/entry/src/main/ets/domain/fsrs/Scheduling.ts
 - Modify: app/entry/src/main/ets/domain/Scheduling.ets
+- Modify: app/entry/src/main/ets/domain/fsrs/Migration.ts
+- Modify: app/entry/src/main/ets/pages/Index.ets
+- Modify: tests/migration.test.ts
 - Modify: tests/scheduling.test.ts
 
 **Interfaces:**
 - Pure producers in fsrs/Scheduling.ts: scheduleFsrs(item, grade, now, retention), postponeToTomorrow(item, now), previewForGrades(item, now, retention)
 - Scheduling.ets re-exports those functions for the UI; it does not duplicate the math.
+- Migration normalizes scheduleMode to fsrs for valid FSRS items without resetting S/D.
 
 - [ ] **Step 1: Write tests for postpone semantics**
 
@@ -849,6 +853,32 @@ it('postpone changes only the due date', () => {
   expect(next.nextReviewAt).toBeGreaterThan(item.nextReviewAt);
 });
 ~~~
+
+- [ ] **Step 1b: Normalize scheduleMode without resetting FSRS state
+
+Add this test to tests/migration.test.ts:
+
+~~~ts
+it('normalizes legacy scheduleMode on an otherwise valid FSRS item', () => {
+  const item: any = {
+    ...base, scheduleMode: 'curve', fsrsStability: 9, fsrsDifficulty: 7,
+    fsrsState: 'review', fsrsScheduledDays: 9, fsrsLapses: 2, fsrsVersion: 6
+  };
+  const migrated = migrateItem(item);
+  expect(migrated.scheduleMode).toBe('fsrs');
+  expect(migrated.fsrsStability).toBe(9);
+  expect(migrated.fsrsDifficulty).toBe(7);
+  expect(migrated.fsrsLapses).toBe(2);
+});
+~~~
+
+In Migration.ts:
+
+- Treat scheduleMode !== 'fsrs' as needing normalization even when FSRS fields are valid.
+- For a valid FSRS item with legacy mode, return an explicit copy with scheduleMode: 'fsrs'; do not reset S/D.
+- needsMigration must return true for this case.
+
+In Index.ets, change addItem to always set scheduleMode: 'fsrs'.
 
 - [ ] **Step 2: Implement the FSRS adapter in fsrs/Scheduling.ts**
 
@@ -877,7 +907,7 @@ Expected: tests PASS and BUILD SUCCESSFUL with CompileArkTS executed.
 - [ ] **Step 4: Commit**
 
 ~~~powershell
-git add app/entry/src/main/ets/domain/fsrs/Scheduling.ts app/entry/src/main/ets/domain/Scheduling.ets tests/scheduling.test.ts
+git add app/entry/src/main/ets/domain/fsrs/Scheduling.ts app/entry/src/main/ets/domain/Scheduling.ets app/entry/src/main/ets/domain/fsrs/Migration.ts app/entry/src/main/ets/pages/Index.ets tests/scheduling.test.ts tests/migration.test.ts
 git commit -m "feat: route scheduling through FSRS"
 ~~~
 
