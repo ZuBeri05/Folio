@@ -923,6 +923,10 @@ git commit -m "feat: route scheduling through FSRS"
 - Consumes: scheduleFsrs, postponeToTomorrow, previewForGrades
 - Produces: @State reviewStage: 'entry' | 'rating'; review entry overlay; postpone action
 
+- [ ] **Step 0: Remove the composer mode selector**
+
+Remove draftMode, the fixed/curve mode buttons, and the "复习安排" mode toggle from the composer. Task 5 already forces addItem to scheduleMode: 'fsrs'. In addItem, set nextReviewAt to startOfDay(now).getTime() so a new FSRS card is due today, set currentIntervalDays to 1 and curveStage to 0. Ensure no remaining draftMode references.
+
 - [ ] **Step 1: Add reviewStage and open/close methods**
 
 Add:
