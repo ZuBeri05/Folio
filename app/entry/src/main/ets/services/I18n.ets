@@ -221,6 +221,7 @@ export class I18n {
     "nextReviewToast", "下次复习：{0}",
     "retentionTitle", "记忆保持率",
     "retentionHint", "评分后按目标记忆率安排下次复习",
+    "retentionExplain", "调高一点，复习更勤，记得更牢；调低一点，复习更少，也更容易忘。90% 适合大多数人。",
       "reviewMode", "复习方式",
       "fsrsMode", "FSRS",
       "fixedMode", "固定间隔",
@@ -426,6 +427,7 @@ export class I18n {
     "nextReviewToast", "Next review: {0}",
     "retentionTitle", "Target retention",
     "retentionHint", "The next review is scheduled for your target retention",
+    "retentionExplain", "A little higher means more reviews and stronger memories. A little lower means fewer reviews and more forgetting. 90% suits most people.",
       "reviewMode", "Review mode",
       "fsrsMode", "FSRS",
       "fixedMode", "Fixed interval",
@@ -596,7 +598,9 @@ export class I18n {
     "deleteConfirm",
     "削除",
     "cancelConfirm",
-    "キャンセル"
+    "キャンセル",
+    "retentionExplain",
+    "少し上げると復習が増えて覚えやすく、下げると復習が減って忘れやすくなります。90% がおすすめです。"
   ]);
 
   private static readonly ko: Map<string, string> = I18n.make([
@@ -763,7 +767,9 @@ export class I18n {
     "deleteConfirm",
     "삭제",
     "cancelConfirm",
-    "취소"
+    "취소",
+    "retentionExplain",
+    "조금 높이면 복습이 잦아져 더 잘 기억하고, 낮추면 복습이 줄어 더 쉽게 잊게 됩니다. 90%가 좋습니다."
   ]);
 
   private static readonly fr: Map<string, string> = I18n.make([
@@ -930,7 +936,9 @@ export class I18n {
     "deleteConfirm",
     "Supprimer",
     "cancelConfirm",
-    "Annuler"
+    "Annuler",
+    "retentionExplain",
+    "Un peu plus haut : plus de révisions, des souvenirs plus solides. Un peu plus bas : moins de révisions, plus d'oubli. 90 % convient à la plupart des gens."
   ]);
 
   private static readonly es: Map<string, string> = I18n.make([
@@ -1097,7 +1105,9 @@ export class I18n {
     "deleteConfirm",
     "Eliminar",
     "cancelConfirm",
-    "Cancelar"
+    "Cancelar",
+    "retentionExplain",
+    "Un poco más arriba: más repasos y recuerdos más firmes. Un poco más abajo: menos repasos y más olvido. El 90 % le va bien a la mayoría."
   ]);
 
   static t(lang: string, key: string, a?: string | number, b?: string | number): string {

@@ -27,6 +27,7 @@ struct Index {
   @State draftTitle: string = '';
   @State draftMode: string = 'fsrs';
   @State draftFixedDays: number = 3;
+  @State dotVisible: number = 6;
   @State newSubjectName: string = '';
   @State calendarProgress: number = 1;
   @State calendarX: number[] = [0, 0, 0, 0, 0, 0, 0];
@@ -120,6 +121,7 @@ struct Index {
     }
     this.playEntry();
     this.playForm();
+    this.playDots();
     this.refreshNotificationState();
     if (this.settings.reminderEnabled && this.items.length > 0) {
       this.syncReminder();
@@ -154,6 +156,7 @@ struct Index {
   private openComposer(): void {
     this.showComposer = true;
     this.playForm();
+    this.playDots();
     this.composerScale = 0.92;
     this.composerShift = 24;
     this.composerOpacity = 0;
@@ -277,6 +280,7 @@ struct Index {
       if (next === 0) {
         this.playEntry();
         this.playForm();
+        this.playDots();
       }
       if (next === 2) {
         this.playCalendarRows();
@@ -535,18 +539,23 @@ struct Index {
       this.toast(this.t('toastWriteToday'));
       return;
     }
+    this.getUIContext().getFocusController().clearFocus();
     const now = new Date();
-    const dueToday = startOfDay(now).getTime();
+    const useFixed = this.draftMode === 'fixed';
+    const fixedDays = Math.max(1, Math.min(90, Math.round(this.draftFixedDays)));
+    const nextAt = useFixed
+      ? addDays(startOfDay(now), fixedDays).getTime()
+      : addDays(startOfDay(now), 1).getTime();
     const item: StudyItem = {
       id: newId(),
       subjectId: this.draftSubjectId,
       title: title,
       createdAt: now.getTime(),
-      scheduleMode: 'fsrs',
+      scheduleMode: useFixed ? 'fixed' : 'fsrs',
       curveStage: 0,
-      fixedIntervalDays: 3,
-      currentIntervalDays: 1,
-      nextReviewAt: dueToday,
+      fixedIntervalDays: useFixed ? fixedDays : 3,
+      currentIntervalDays: useFixed ? fixedDays : 1,
+      nextReviewAt: nextAt,
       lastReviewedAt: 0,
       reviewCount: 0,
       status: 'active',
@@ -932,6 +941,48 @@ struct Index {
     animateTo({ duration: 520, curve: Curve.EaseOut }, () => {
       this.formProgress = 1;
     });
+  }
+
+  private playDots(): void {
+    this.dotVisible = 0;
+    for (let i = 0; i < 6; i++) {
+      setTimeout(() => {
+        this.dotVisible = i + 1;
+      }, i * 110);
+    }
+  }
+
+  private curveDotLabels(): string[] {
+    const labels: string[] = [this.t('todayNode')];
+    let cursor: StudyItem = emptyItem();
+    cursor.scheduleMode = 'fsrs';
+    let at = Date.now();
+    for (let i = 0; i < 5; i++) {
+      const result = scheduleFsrs(cursor, 3, at, this.settings.targetRetention);
+      labels.push(this.t('days', result.nextIntervalDays));
+      cursor = {
+        id: cursor.id,
+        subjectId: cursor.subjectId,
+        title: cursor.title,
+        createdAt: cursor.createdAt,
+        scheduleMode: 'fsrs',
+        curveStage: 0,
+        fixedIntervalDays: 3,
+        currentIntervalDays: result.nextIntervalDays,
+        nextReviewAt: result.nextAt,
+        lastReviewedAt: at,
+        reviewCount: cursor.reviewCount + 1,
+        status: 'active',
+        fsrsStability: result.stability,
+        fsrsDifficulty: result.difficulty,
+        fsrsState: result.state,
+        fsrsScheduledDays: result.scheduledDays,
+        fsrsLapses: result.lapses,
+        fsrsVersion: 6
+      };
+      at = result.nextAt;
+    }
+    return labels;
   }
 
   private playCalendarRows(): void {
@@ -1482,6 +1533,7 @@ struct Index {
             .padding({ left: 12, right: 12 })
             .onClick(() => {
               this.draftMode = 'fsrs';
+              this.playDots();
             })
           Button(this.t('fixedMode'))
             .height(28)
@@ -1500,37 +1552,83 @@ struct Index {
         .width('100%')
         .margin({ top: 14 })
 
-        if (this.draftMode === 'fixed') {
-          Row() {
-            Button('-')
+          Stack({ alignContent: Alignment.TopStart }) {
+            Row() {
+              ForEach(this.curveDotLabels(), (label: string, index: number) => {
+                Column() {
+                  Circle({ width: 8, height: 8 })
+                    .fill(index === 0 ? Tokens.orange : Tokens.surface)
+                    .stroke(index === 0 ? Tokens.orange : '#80FF9C2C')
+                    .strokeWidth(1.5)
+                  Text(label)
+                    .fontSize(7.5)
+                    .fontColor(index === 0 ? '#B16A0A' : Tokens.mutedSoft)
+                    .margin({ top: 5 })
+                }
+                .layoutWeight(1)
+                .opacity(this.dotVisible > index ? 1 : 0)
+                .translate({ y: this.dotVisible > index ? 0 : 10 })
+                .scale({ x: this.dotVisible > index ? 1 : 0.5, y: this.dotVisible > index ? 1 : 0.5 })
+                .animation({ duration: 220, curve: Curve.EaseOut })
+              })
+            }
+            .width('100%')
+            .margin({ top: 12 })
+            .opacity(this.draftMode === 'fsrs' ? 1 : 0)
+            .scale({ x: this.draftMode === 'fsrs' ? 1 : 0.96, y: this.draftMode === 'fsrs' ? 1 : 0.96 })
+            .translate({ y: this.draftMode === 'fsrs' ? 0 : -4 })
+            .enabled(this.draftMode === 'fsrs')
+            .animation({ duration: 220, curve: Curve.EaseOut })
+
+            Row() {
+              Stack({ alignContent: Alignment.Center }) {
+                Text('-')
+                  .fontSize(18)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(Tokens.inkSoft)
+              }
               .width(34)
               .height(30)
-              .fontSize(14)
-              .fontColor(Tokens.inkSoft)
               .backgroundColor(Tokens.surface)
+              .borderWidth(1)
+              .borderColor(Tokens.line)
               .borderRadius(10)
               .onClick(() => {
                 this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
               })
-            Text(this.t('fixedDaysHint', this.draftFixedDays))
-              .layoutWeight(1)
-              .fontSize(10)
-              .fontColor(Tokens.muted)
-              .textAlign(TextAlign.Center)
-            Button('+')
+              Text(this.t('fixedDaysHint', this.draftFixedDays))
+                .layoutWeight(1)
+                .fontSize(10)
+                .fontColor(Tokens.muted)
+                .textAlign(TextAlign.Center)
+              Stack({ alignContent: Alignment.Center }) {
+                Text('+')
+                  .fontSize(18)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(Tokens.inkSoft)
+              }
               .width(34)
               .height(30)
-              .fontSize(14)
-              .fontColor(Tokens.inkSoft)
               .backgroundColor(Tokens.surface)
+              .borderWidth(1)
+              .borderColor(Tokens.line)
               .borderRadius(10)
               .onClick(() => {
                 this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
               })
+            }
+            .width('100%')
+            .margin({ top: 10 })
+            .opacity(this.draftMode === 'fixed' ? 1 : 0)
+            .scale({ x: this.draftMode === 'fixed' ? 1 : 0.96, y: this.draftMode === 'fixed' ? 1 : 0.96 })
+            .translate({ y: this.draftMode === 'fixed' ? 0 : 4 })
+            .enabled(this.draftMode === 'fixed')
+            .animation({ duration: 220, curve: Curve.EaseOut })
           }
           .width('100%')
-          .margin({ top: 8 })
-        }
+          .height(this.draftMode === 'fixed' ? 52 : 40)
+          .clip(true)
+          .animation({ duration: 280, curve: Curve.EaseInOut })
 
         Row() {
         Column() {
@@ -1918,6 +2016,13 @@ struct Index {
         }
         .width('100%')
 
+        Text(this.t('retentionExplain'))
+          .width(this.isWide ? 520 : '100%')
+          .fontSize(this.isWide ? 10.5 : 10)
+          .lineHeight(this.isWide ? 16 : 15)
+          .fontColor(Tokens.inkSoft)
+          .margin({ top: 10 })
+
         Button(this.t('saveSettings'))
           .width('100%')
           .height(42)
@@ -1926,7 +2031,7 @@ struct Index {
           .fontColor('#3D2A00')
           .backgroundColor(Tokens.yellow)
           .borderRadius(13)
-          .margin({ top: 16 })
+          .margin({ top: 12 })
           .onClick(() => {
             this.saveSettings();
           })
