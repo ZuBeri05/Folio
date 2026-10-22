@@ -117,7 +117,8 @@ export function needsMigration(data: LegacyAppData): boolean {
     return true;
   }
   if (!Array.isArray(candidate.items) ||
-      candidate.items.some((item: MigratedStudyItem) => !isValidFsrsItem(item))) {
+      candidate.items.some((item: MigratedStudyItem) =>
+        !isValidFsrsItem(item) || item.scheduleMode !== 'fsrs')) {
     return true;
   }
   if (!Array.isArray(candidate.logs) ||
@@ -130,9 +131,36 @@ export function needsMigration(data: LegacyAppData): boolean {
   return false;
 }
 
+function copyWithFsrsMode(item: LegacyStudyItem): MigratedStudyItem {
+  const candidate = item as MigratedStudyItem;
+  return {
+    id: item.id,
+    subjectId: item.subjectId,
+    title: item.title,
+    createdAt: item.createdAt,
+    scheduleMode: 'fsrs',
+    curveStage: item.curveStage,
+    fixedIntervalDays: item.fixedIntervalDays,
+    currentIntervalDays: item.currentIntervalDays,
+    nextReviewAt: item.nextReviewAt,
+    lastReviewedAt: item.lastReviewedAt,
+    reviewCount: item.reviewCount,
+    status: item.status,
+    fsrsStability: candidate.fsrsStability,
+    fsrsDifficulty: candidate.fsrsDifficulty,
+    fsrsState: candidate.fsrsState,
+    fsrsScheduledDays: candidate.fsrsScheduledDays,
+    fsrsLapses: candidate.fsrsLapses,
+    fsrsVersion: candidate.fsrsVersion
+  };
+}
+
 export function migrateItem(item: LegacyStudyItem): MigratedStudyItem {
   if (isValidFsrsItem(item)) {
-    return item as MigratedStudyItem;
+    if (item.scheduleMode === 'fsrs') {
+      return item as MigratedStudyItem;
+    }
+    return copyWithFsrsMode(item);
   }
   const reviewed = item.reviewCount > 0;
   const currentInterval = isFiniteNumber(item.currentIntervalDays) ? item.currentIntervalDays : 0;

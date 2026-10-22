@@ -474,7 +474,7 @@ struct Index {
       subjectId: this.draftSubjectId,
       title: title,
       createdAt: now.getTime(),
-      scheduleMode: this.draftMode,
+      scheduleMode: 'fsrs',
       curveStage: 0,
       fixedIntervalDays: this.draftFixedDays,
       currentIntervalDays: this.draftMode === 'fixed' ? this.draftFixedDays : 1,

@@ -90,6 +90,25 @@ describe('migration', () => {
     expect(twice.fsrsScheduledDays).toBe(9);
   });
 
+  it('normalizes legacy scheduleMode on an otherwise valid FSRS item', () => {
+    const item: any = {
+      ...base, scheduleMode: 'curve', fsrsStability: 9, fsrsDifficulty: 7,
+      fsrsState: 'review', fsrsScheduledDays: 9, fsrsLapses: 2, fsrsVersion: 6
+    };
+    const migrated = migrateItem(item);
+    expect(migrated.scheduleMode).toBe('fsrs');
+    expect(migrated.fsrsStability).toBe(9);
+    expect(migrated.fsrsDifficulty).toBe(7);
+    expect(migrated.fsrsLapses).toBe(2);
+    expect(migrated.fsrsScheduledDays).toBe(9);
+    expect(migrated.nextReviewAt).toBe(item.nextReviewAt);
+    expect(migrated.reviewCount).toBe(item.reviewCount);
+
+    const data = makeValidData();
+    data.items[0] = item;
+    expect(needsMigration(data)).toBe(true);
+  });
+
   it('detects legacy items, logs, and settings separately', () => {
     const valid = makeValidData();
     expect(needsMigration(valid)).toBe(false);

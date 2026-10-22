@@ -1,13 +1,10 @@
 import { StudyItem, ReviewResult } from './Models';
-import { nextDueAt } from './fsrs/Scheduling.ts';
-import { initialState } from './fsrs/Fsrs';
+import { nextDueAt, postponeToTomorrow, previewForGrades, scheduleFsrs } from './fsrs/Scheduling.ts';
+
+export { postponeToTomorrow, previewForGrades, scheduleFsrs };
 
 export const DAY_MS: number = 86400000;
 export const CURVE: number[] = [1, 2, 4, 7, 15, 30, 60];
-
-export function fsrsCoreReady(now: number): boolean {
-  return initialState(3, now).state === 'review';
-}
 
 export function startOfDay(value: Date): Date {
   const date = new Date(value.getTime());
