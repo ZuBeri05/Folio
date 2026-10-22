@@ -338,7 +338,7 @@ tests/scheduling.test.ts:
 ~~~ts
 import { describe, expect, it } from 'vitest';
 import { initialState } from '../app/entry/src/main/ets/domain/fsrs/Fsrs.ts';
-import { nextDueAt, roundFsrsDays } from '../app/entry/src/main/ets/domain/Scheduling.ts';
+import { nextDueAt, roundFsrsDays } from '../app/entry/src/main/ets/domain/fsrs/Scheduling.ts';
 
 describe('FSRS day scheduling', () => {
   it('never schedules today', () => {
@@ -372,7 +372,7 @@ Expected: FAIL because Scheduling.ts does not exist.
 
 - [ ] **Step 3: Extract pure scheduling helpers**
 
-Create app/entry/src/main/ets/domain/Scheduling.ts with:
+Create app/entry/src/main/ets/domain/fsrs/Scheduling.ts with:
 
 ~~~ts
 export function roundFsrsDays(raw: number): number {
@@ -401,7 +401,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ~~~powershell
-git add app/entry/src/main/ets/domain/Scheduling.ts app/entry/src/main/ets/domain/Scheduling.ets tests/scheduling.test.ts
+git add app/entry/src/main/ets/domain/fsrs/Scheduling.ts app/entry/src/main/ets/domain/Scheduling.ets tests/scheduling.test.ts
 git commit -m "feat: add FSRS day scheduling adapter"
 ~~~
 
@@ -695,7 +695,7 @@ git commit -m "feat: migrate stored data to FSRS schema"
 Add:
 
 ~~~ts
-import { postponeToTomorrow } from '../app/entry/src/main/ets/domain/Scheduling.ts';
+import { postponeToTomorrow } from '../app/entry/src/main/ets/domain/fsrs/Scheduling.ts';
 
 it('postpone changes only the due date', () => {
   const item = { id: 'a', reviewCount: 3, fsrsStability: 3, fsrsDifficulty: 5, nextReviewAt: 1 };
