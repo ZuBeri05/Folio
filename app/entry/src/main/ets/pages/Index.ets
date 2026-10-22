@@ -2,7 +2,8 @@ import { common } from '@kit.AbilityKit';
 import { promptAction, LengthMetrics, KeyboardAvoidMode, window } from '@kit.ArkUI';
 import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
 import { Store } from '../data/Store';
-import { scheduleNext, postponeToTomorrow, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
+import { scheduleFsrs, previewForGrades, postponeToTomorrow, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN } from '../domain/Scheduling';
+import { fsrsStateFromItem } from '../domain/fsrs/Scheduling.ts';
 import { ReminderService } from '../services/ReminderService';
 import { Tokens } from '../theme/Tokens';
 import { I18n, LanguageOption } from '../services/I18n';
@@ -36,7 +37,7 @@ struct Index {
   @State isTablet: boolean = false;
   @State listOpacity: number = 0;
   @State listShift: number = 16;
-  @State pressedRating: string = '';
+  @State pressedGrade: number = 0;
   @State composerScale: number = 0.97;
   @State composerShift: number = 24;
   @State composerOpacity: number = 1;
@@ -96,6 +97,7 @@ struct Index {
     $r('app.media.ic_watermelon_off')
   ];
   private readonly curveNodes: number[] = [0, 1, 2, 3, 4, 5];
+  private readonly gradeNodes: number[] = [1, 2, 3, 4];
 
   aboutToAppear(): void {
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.NONE);
@@ -362,9 +364,79 @@ struct Index {
     return log.id.length > 0 ? log.previousIntervalDays : 1;
   }
 
-  private intervalHint(rating: string): string {
-    const result = scheduleNext(this.reviewItem, rating, new Date(), this.settings.curveDays);
-    return result.nextIntervalDays === 1 ? this.t('tomorrow') : this.t('daysAfter', result.nextIntervalDays);
+  private gradePreview(): number[] {
+    return previewForGrades(this.reviewItem, Date.now(), this.settings.targetRetention);
+  }
+
+  private intervalText(days: number): string {
+    return days === 1 ? this.t('tomorrow') : this.t('daysAfter', days);
+  }
+
+  private gradeColor(grade: number): string {
+    if (grade === 1) {
+      return '#D95F3F';
+    }
+    if (grade === 2) {
+      return '#B17A12';
+    }
+    if (grade === 3) {
+      return '#8F5600';
+    }
+    return '#5AA469';
+  }
+
+  private gradeTint(grade: number, alpha: string): string {
+    return '#' + alpha + this.gradeColor(grade).substring(1);
+  }
+
+  private gradeLabel(grade: number): string {
+    if (grade === 1) {
+      return this.t('gradeAgain');
+    }
+    if (grade === 2) {
+      return this.t('gradeHard');
+    }
+    if (grade === 3) {
+      return this.t('gradeGood');
+    }
+    return this.t('gradeEasy');
+  }
+
+  private gradeMeaning(grade: number): string {
+    if (grade === 1) {
+      return this.t('gradeAgainHint');
+    }
+    if (grade === 2) {
+      return this.t('gradeHardHint');
+    }
+    if (grade === 3) {
+      return this.t('gradeGoodHint');
+    }
+    return this.t('gradeEasyHint');
+  }
+
+  private gradeIntervalText(grade: number): string {
+    const preview = this.gradePreview();
+    const index = grade - 1;
+    const days = index >= 0 && index < preview.length ? preview[index] : 1;
+    return this.intervalText(days);
+  }
+
+  private legacyRating(grade: number): string {
+    if (grade === 1) {
+      return 'forgot';
+    }
+    if (grade === 2) {
+      return 'fuzzy';
+    }
+    return 'got';
+  }
+
+  private reviewElapsedDays(item: StudyItem, now: Date): number {
+    if (item.lastReviewedAt <= 0) {
+      return 0;
+    }
+    return daysBetween(item.lastReviewedAt, now);
   }
 
   private curveLabels(): string[] {
@@ -390,6 +462,7 @@ struct Index {
     this.showReview = false;
     this.reviewStage = 'entry';
     this.reviewScale = 1;
+    this.pressedGrade = 0;
   }
 
   private startRating(): void {
@@ -405,28 +478,29 @@ struct Index {
     this.toast(this.t('postponedTomorrow'));
   }
 
-  private finishReview(rating: string): void {
+  private finishReview(grade: number): void {
     if (this.reviewBusy) {
       return;
     }
     this.reviewBusy = true;
     animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
-      this.pressedRating = rating;
+      this.pressedGrade = grade;
     });
     setTimeout(() => {
       animateTo({ duration: 180, curve: Curve.EaseIn }, () => {
         this.reviewScale = 0.95;
       });
       setTimeout(() => {
-        this.commitReview(rating);
+        this.commitReview(grade);
       }, 170);
     }, 130);
   }
 
-  private commitReview(rating: string): void {
+  private commitReview(grade: number): void {
     const item = this.reviewItem;
     const now = new Date();
-    const result = scheduleNext(item, rating, now, this.settings.curveDays);
+    const result = scheduleFsrs(item, grade, now.getTime(), this.settings.targetRetention);
+    const before = fsrsStateFromItem(item);
     const updated: StudyItem = {
       id: item.id,
       subjectId: item.subjectId,
@@ -440,12 +514,12 @@ struct Index {
       lastReviewedAt: now.getTime(),
       reviewCount: item.reviewCount + 1,
       status: item.status,
-      fsrsStability: item.fsrsStability,
-      fsrsDifficulty: item.fsrsDifficulty,
-      fsrsState: item.fsrsState,
-      fsrsScheduledDays: item.fsrsScheduledDays,
-      fsrsLapses: item.fsrsLapses,
-      fsrsVersion: item.fsrsVersion
+      fsrsStability: result.stability,
+      fsrsDifficulty: result.difficulty,
+      fsrsState: result.state,
+      fsrsScheduledDays: result.scheduledDays,
+      fsrsLapses: result.lapses,
+      fsrsVersion: 6
     };
     animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
       this.items = this.items.map((value: StudyItem) => value.id === updated.id ? updated : value);
@@ -454,25 +528,25 @@ struct Index {
       id: newId(),
       itemId: item.id,
       reviewedAt: now.getTime(),
-      rating: rating,
+      rating: this.legacyRating(grade),
       previousIntervalDays: item.currentIntervalDays,
       nextIntervalDays: result.nextIntervalDays,
       nextReviewAt: result.nextAt,
-      grade: rating === 'forgot' ? 1 : rating === 'fuzzy' ? 2 : 3,
-      stabilityBefore: 0,
-      stabilityAfter: 0,
-      difficultyBefore: 0,
-      difficultyAfter: 0,
-      elapsedDays: item.currentIntervalDays,
-      scheduledDays: result.nextIntervalDays
+      grade: grade,
+      stabilityBefore: before.stability,
+      stabilityAfter: result.stability,
+      difficultyBefore: before.difficulty,
+      difficultyAfter: result.difficulty,
+      elapsedDays: this.reviewElapsedDays(item, now),
+      scheduledDays: result.scheduledDays
     };
     this.logs = [log, ...this.logs];
     this.closeReview();
-    this.pressedRating = '';
+    this.pressedGrade = 0;
     this.reviewBusy = false;
     this.persist();
     this.syncReminder();
-    this.toast(this.t('toastNext', formatDate(result.nextAt)));
+    this.toast(this.t('nextReviewToast', formatDate(result.nextAt)));
   }
 
   private addItem(): void {
@@ -2092,22 +2166,27 @@ struct Index {
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
         } else {
-          Column({ space: 16 }) {
-            if (this.reviewStage === 'rating') {
-              this.RatingCard()
-            } else {
-              this.EntryCard()
+          Scroll() {
+            Column({ space: 16 }) {
+              if (this.reviewStage === 'rating') {
+                this.RatingCard()
+              } else {
+                this.EntryCard()
+              }
+              this.CurvePanel()
             }
-            this.CurvePanel()
+            .width('100%')
+            .justifyContent(FlexAlign.Start)
+            .alignItems(HorizontalAlign.Start)
+            .backgroundColor(this.pageBg())
+            .animation({ duration: 320, curve: Curve.EaseOut })
+            .padding({ left: 12, right: 12, top: 10, bottom: 12 })
+            .borderRadius(28)
           }
           .width('100%')
           .layoutWeight(1)
-          .justifyContent(FlexAlign.Start)
-          .alignItems(HorizontalAlign.Start)
-          .backgroundColor(this.pageBg())
-    .animation({ duration: 320, curve: Curve.EaseOut })
-          .padding({ left: 12, right: 12, top: 10, bottom: 12 })
-          .borderRadius(28)
+          .scrollBar(BarState.Off)
+          .edgeEffect(EdgeEffect.Spring)
         }
       }
       .width('100%')
@@ -2272,6 +2351,8 @@ struct Index {
         .fontColor(Tokens.mutedSoft)
         .lineHeight(16)
         .margin({ top: 4 })
+
+      this.GradeCards()
     }
     .width(this.isWide ? 680 : '100%')
     .padding(this.isWide ? 32 : 22)
@@ -2280,6 +2361,80 @@ struct Index {
     .borderWidth(1)
     .borderColor('#CCFFFFFF')
     .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
+  }
+
+  @Builder GradeCards() {
+    Column() {
+      if (this.isWide) {
+        Row({ space: 12 }) {
+          ForEach(this.gradeNodes, (grade: number) => {
+            Column() {
+              this.GradeCard(grade)
+            }
+            .layoutWeight(1)
+          }, (grade: number) => 'grade-' + grade)
+        }
+        .width('100%')
+      } else {
+        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
+          ForEach(this.gradeNodes, (grade: number) => {
+            Column() {
+              this.GradeCard(grade)
+            }
+            .width('48%')
+            .margin({ bottom: 10 })
+          }, (grade: number) => 'grade-' + grade)
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .margin({ top: 18 })
+  }
+
+  @Builder GradeCard(grade: number) {
+    Column() {
+      Row() {
+        Circle({ width: 7, height: 7 })
+          .fill(this.gradeColor(grade))
+        Text(this.gradeLabel(grade))
+          .fontSize(this.isWide ? 14 : 13)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.gradeColor(grade))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ left: 7 })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Text(this.gradeMeaning(grade))
+        .width('100%')
+        .fontSize(this.isWide ? 9.5 : 9)
+        .fontColor(Tokens.muted)
+        .lineHeight(this.isWide ? 13 : 12)
+        .maxLines(2)
+        .height(this.isWide ? 26 : 24)
+        .margin({ top: 6 })
+
+      Text(this.gradeIntervalText(grade))
+        .width('100%')
+        .fontSize(this.isWide ? 16 : 15)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Tokens.ink)
+        .margin({ top: 8 })
+    }
+    .width('100%')
+    .padding(this.isWide ? 14 : 12)
+    .backgroundColor(this.gradeTint(grade, '14'))
+    .borderRadius(16)
+    .borderWidth(1)
+    .borderColor(this.gradeTint(grade, '3D'))
+    .scale({ x: this.pressedGrade === grade ? 0.96 : 1, y: this.pressedGrade === grade ? 0.96 : 1 })
+    .animation({ duration: 160, curve: Curve.EaseOut })
+    .onClick(() => {
+      this.finishReview(grade);
+    })
   }
 
   @Builder CurvePanel() {
