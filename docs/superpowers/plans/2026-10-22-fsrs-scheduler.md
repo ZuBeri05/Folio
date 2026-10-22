@@ -407,6 +407,66 @@ git commit -m "feat: add FSRS day scheduling adapter"
 
 ---
 
+### Task 2 acceptance gates
+
+**Files:**
+- Create: tests/fixtures/fsrs6-golden.json
+- Modify: tests/fsrs.test.ts
+- Modify: app/entry/src/main/ets/domain/Scheduling.ets
+
+- [ ] **Gate 1: Add a named-reference fixture with tolerance**
+
+Create tests/fixtures/fsrs6-golden.json:
+
+~~~json
+{
+  "source": "ts-fsrs 5.2.3 FSRS-6 reference; elapsed=previous scheduled interval; difficulty unrounded",
+  "retention": 0.90,
+  "intervals": [2, 11, 46, 163, 497]
+}
+~~~
+
+Add a test that replays five Good reviews from initialState(3, 0), feeding the previous scheduled interval as elapsedDays, and asserts each interval is within ±1 day of the fixture. This pins the local rounding convention without pretending 497 is an official byte-exact vector.
+
+- [ ] **Gate 2: Verify the ArkTS build can import Fsrs.ts**
+
+In Scheduling.ets add:
+
+~~~ts
+import { initialState } from './fsrs/Fsrs';
+
+export function fsrsCoreReady(now: number): boolean {
+  return initialState(3, now).state === 'review';
+}
+~~~
+
+This is a compile gate only; do not wire it into UI or behavior yet. Task 5 replaces it with the real adapter.
+
+- [ ] **Gate 3: Run the ArkTS build**
+
+~~~powershell
+cd jiesheng/app
+node ../.tools/node_modules/@deveco/deveco-cli/cli.js build --build-mode debug
+~~~
+
+Expected: BUILD SUCCESSFUL. If the .ts import or object syntax fails, fix it before proceeding.
+
+- [ ] **Gate 4: Run all tests and commit the gate changes**
+
+~~~powershell
+cd jiesheng/tests
+npx vitest run
+~~~
+
+Expected: all tests pass.
+
+~~~powershell
+git add tests/fixtures/fsrs6-golden.json tests/fsrs.test.ts app/entry/src/main/ets/domain/Scheduling.ets
+git commit -m "test: pin FSRS-6 reference sequence and ArkTS import"
+~~~
+
+---
+
 ### Task 3: Add FSRS fields and pure migration
 
 **Files:**
