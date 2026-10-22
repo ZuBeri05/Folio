@@ -46,6 +46,19 @@ describe('migration', () => {
     expect(result.fsrsDifficulty).toBe(5);
   });
 
+  it('preserves fixed interval items without forcing FSRS mode', () => {
+    const fixed = {
+      ...base, scheduleMode: 'fixed', fixedIntervalDays: 7, reviewCount: 0,
+      lastReviewedAt: 0, fsrsStability: 0, fsrsDifficulty: 5, fsrsState: 'new',
+      fsrsScheduledDays: 0, fsrsLapses: 0, fsrsVersion: 6
+    };
+    expect(migrateItem(fixed as any).scheduleMode).toBe('fixed');
+    expect(migrateItem(fixed as any).fixedIntervalDays).toBe(7);
+    const data = makeValidData();
+    data.items = [fixed];
+    expect(needsMigration(data)).toBe(false);
+  });
+
   it('leaves unreviewed items as new', () => {
     const result = migrateItem({ ...base, reviewCount: 0, lastReviewedAt: 0 });
     expect(result.fsrsState).toBe('new');

@@ -110,16 +110,47 @@ export function isValidFsrsItem(item: LegacyStudyItem): boolean {
     candidate.fsrsScheduledDays >= 0 && candidate.fsrsLapses >= 0;
 }
 
+export function isValidFixedItem(item: LegacyStudyItem): boolean {
+  return isFiniteNumber(item.fixedIntervalDays) && item.fixedIntervalDays > 0
+    && isFiniteNumber(item.nextReviewAt);
+}
+
+function copyFixedItem(item: LegacyStudyItem): MigratedStudyItem {
+  const candidate = item as MigratedStudyItem;
+  return {
+    id: item.id,
+    subjectId: item.subjectId,
+    title: item.title,
+    createdAt: item.createdAt,
+    scheduleMode: 'fixed',
+    curveStage: isFiniteNumber(item.curveStage) ? item.curveStage : 0,
+    fixedIntervalDays: Math.max(1, item.fixedIntervalDays),
+    currentIntervalDays: isFiniteNumber(item.currentIntervalDays) ? item.currentIntervalDays : 1,
+    nextReviewAt: item.nextReviewAt,
+    lastReviewedAt: isFiniteNumber(item.lastReviewedAt) ? item.lastReviewedAt : 0,
+    reviewCount: isFiniteNumber(item.reviewCount) ? item.reviewCount : 0,
+    status: item.status,
+    fsrsStability: isFiniteNumber(candidate.fsrsStability) ? candidate.fsrsStability : 0,
+    fsrsDifficulty: isFiniteNumber(candidate.fsrsDifficulty) ? candidate.fsrsDifficulty : 5,
+    fsrsState: typeof candidate.fsrsState === 'string' ? candidate.fsrsState : 'new',
+    fsrsScheduledDays: isFiniteNumber(candidate.fsrsScheduledDays) ? candidate.fsrsScheduledDays : 0,
+    fsrsLapses: isFiniteNumber(candidate.fsrsLapses) ? candidate.fsrsLapses : 0,
+    fsrsVersion: 6
+  };
+}
+
 export function needsMigration(data: LegacyAppData): boolean {
   const candidate = data as MigratedAppData;
   if (candidate.schemaVersion !== 2) {
     return true;
   }
-  if (!Array.isArray(candidate.items) ||
-      candidate.items.some((item: MigratedStudyItem) =>
-        !isValidFsrsItem(item) || item.scheduleMode !== 'fsrs')) {
-    return true;
-  }
+    if (!Array.isArray(candidate.items) ||
+        candidate.items.some((item: MigratedStudyItem) =>
+          item.scheduleMode === 'fixed'
+            ? !isValidFixedItem(item)
+            : (!isValidFsrsItem(item) || item.scheduleMode !== 'fsrs'))) {
+      return true;
+    }
   if (!Array.isArray(candidate.logs) ||
       candidate.logs.some((log: MigratedReviewLog) => !isFiniteNumber(log.grade))) {
     return true;
@@ -155,6 +186,9 @@ function copyWithFsrsMode(item: LegacyStudyItem): MigratedStudyItem {
 }
 
 export function migrateItem(item: LegacyStudyItem): MigratedStudyItem {
+  if (item.scheduleMode === 'fixed') {
+    return copyFixedItem(item);
+  }
   if (isValidFsrsItem(item)) {
     if (item.scheduleMode === 'fsrs') {
       return item as MigratedStudyItem;
