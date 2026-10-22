@@ -187,6 +187,7 @@ struct Index {
   private persist(): void {
     const context = getContext(this) as common.UIAbilityContext;
     const data: AppData = {
+      schemaVersion: 2,
       subjects: this.subjects,
       items: this.items,
       logs: this.logs,
@@ -329,7 +330,22 @@ struct Index {
         return this.logs[i];
       }
     }
-    return { id: '', itemId: '', reviewedAt: 0, rating: '', previousIntervalDays: 0, nextIntervalDays: 0, nextReviewAt: 0 };
+    return {
+      id: '',
+      itemId: '',
+      reviewedAt: 0,
+      rating: '',
+      previousIntervalDays: 0,
+      nextIntervalDays: 0,
+      nextReviewAt: 0,
+      grade: 0,
+      stabilityBefore: 0,
+      stabilityAfter: 0,
+      difficultyBefore: 0,
+      difficultyAfter: 0,
+      elapsedDays: 0,
+      scheduledDays: 0
+    };
   }
 
   private lastRating(itemId: string): string {
@@ -408,7 +424,13 @@ struct Index {
       nextReviewAt: result.nextAt,
       lastReviewedAt: now.getTime(),
       reviewCount: item.reviewCount + 1,
-      status: item.status
+      status: item.status,
+      fsrsStability: item.fsrsStability,
+      fsrsDifficulty: item.fsrsDifficulty,
+      fsrsState: item.fsrsState,
+      fsrsScheduledDays: item.fsrsScheduledDays,
+      fsrsLapses: item.fsrsLapses,
+      fsrsVersion: item.fsrsVersion
     };
     animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
       this.items = this.items.map((value: StudyItem) => value.id === updated.id ? updated : value);
@@ -420,7 +442,14 @@ struct Index {
       rating: rating,
       previousIntervalDays: item.currentIntervalDays,
       nextIntervalDays: result.nextIntervalDays,
-      nextReviewAt: result.nextAt
+      nextReviewAt: result.nextAt,
+      grade: rating === 'forgot' ? 1 : rating === 'fuzzy' ? 2 : 3,
+      stabilityBefore: 0,
+      stabilityAfter: 0,
+      difficultyBefore: 0,
+      difficultyAfter: 0,
+      elapsedDays: item.currentIntervalDays,
+      scheduledDays: result.nextIntervalDays
     };
     this.logs = [log, ...this.logs];
     this.showReview = false;
@@ -452,7 +481,13 @@ struct Index {
       nextReviewAt: firstAt,
       lastReviewedAt: 0,
       reviewCount: 0,
-      status: 'active'
+      status: 'active',
+      fsrsStability: 0,
+      fsrsDifficulty: 5,
+      fsrsState: 'new',
+      fsrsScheduledDays: 0,
+      fsrsLapses: 0,
+      fsrsVersion: 6
     };
     animateTo({ duration: 320, curve: Curve.EaseOut }, () => {
       this.items = [item, ...this.items];
@@ -472,7 +507,8 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      curveDays: this.settings.curveDays
+      curveDays: this.settings.curveDays,
+      targetRetention: this.settings.targetRetention
     };
     this.persist();
     this.syncReminder();
@@ -485,7 +521,8 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      curveDays: this.settings.curveDays
+      curveDays: this.settings.curveDays,
+      targetRetention: this.settings.targetRetention
     };
   }
 
@@ -507,7 +544,8 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: index,
       language: this.settings.language,
-      curveDays: this.settings.curveDays
+      curveDays: this.settings.curveDays,
+      targetRetention: this.settings.targetRetention
     };
     this.persist();
     this.syncSystemBars();
@@ -573,7 +611,8 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      curveDays: next
+      curveDays: next,
+      targetRetention: this.settings.targetRetention
     };
     this.persist();
   }
@@ -604,7 +643,8 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: code,
-      curveDays: this.settings.curveDays
+      curveDays: this.settings.curveDays,
+      targetRetention: this.settings.targetRetention
     };
     this.todayLabel = this.localizedToday();
     this.persist();
@@ -727,7 +767,13 @@ struct Index {
       nextReviewAt: this.actionItem.nextReviewAt,
       lastReviewedAt: this.actionItem.lastReviewedAt,
       reviewCount: this.actionItem.reviewCount,
-      status: this.actionItem.status
+      status: this.actionItem.status,
+      fsrsStability: this.actionItem.fsrsStability,
+      fsrsDifficulty: this.actionItem.fsrsDifficulty,
+      fsrsState: this.actionItem.fsrsState,
+      fsrsScheduledDays: this.actionItem.fsrsScheduledDays,
+      fsrsLapses: this.actionItem.fsrsLapses,
+      fsrsVersion: this.actionItem.fsrsVersion
     };
     this.items = this.items.map((item: StudyItem) => item.id === updated.id ? updated : item);
     this.showItemActions = false;

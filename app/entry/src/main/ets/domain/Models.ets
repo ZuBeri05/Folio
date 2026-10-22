@@ -27,6 +27,12 @@ export interface StudyItem {
   lastReviewedAt: number;
   reviewCount: number;
   status: string;
+  fsrsStability: number;
+  fsrsDifficulty: number;
+  fsrsState: string;
+  fsrsScheduledDays: number;
+  fsrsLapses: number;
+  fsrsVersion: number;
 }
 
 export interface ReviewLog {
@@ -37,6 +43,13 @@ export interface ReviewLog {
   previousIntervalDays: number;
   nextIntervalDays: number;
   nextReviewAt: number;
+  grade: number;
+  stabilityBefore: number;
+  stabilityAfter: number;
+  difficultyBefore: number;
+  difficultyAfter: number;
+  elapsedDays: number;
+  scheduledDays: number;
 }
 
 export interface SubjectTime {
@@ -51,9 +64,11 @@ export interface Settings {
   themeIndex: number;
   language: string;
   curveDays: number[];
+  targetRetention: number;
 }
 
 export interface AppData {
+  schemaVersion: number;
   subjects: Subject[];
   items: StudyItem[];
   logs: ReviewLog[];
@@ -89,7 +104,13 @@ export function emptyItem(): StudyItem {
     nextReviewAt: 0,
     lastReviewedAt: 0,
     reviewCount: 0,
-    status: 'active'
+    status: 'active',
+    fsrsStability: 0,
+    fsrsDifficulty: 5,
+    fsrsState: 'new',
+    fsrsScheduledDays: 0,
+    fsrsLapses: 0,
+    fsrsVersion: 6
   };
 }
 
@@ -101,6 +122,7 @@ export function createDefaultData(): AppData {
     { id: 'major', name: '专业课', color: '#8E7CC3' }
   ];
   return {
+    schemaVersion: 2,
     subjects: subjects,
     items: [],
     logs: [],
@@ -110,7 +132,8 @@ export function createDefaultData(): AppData {
       subjectTimes: [],
       themeIndex: 0,
       language: 'zh',
-      curveDays: [1, 2, 4, 7, 15, 30, 60]
+      curveDays: [1, 2, 4, 7, 15, 30, 60],
+      targetRetention: 0.9
     }
   };
 }
