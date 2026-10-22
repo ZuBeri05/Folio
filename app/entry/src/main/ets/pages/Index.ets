@@ -64,10 +64,6 @@ struct Index {
   @State confirmSubjectId: string = '';
   @State confirmItemId: string = '';
   @State confirmScale: number = 1;
-  @State showCurvePicker: boolean = false;
-  @State curvePickIndex: number = 0;
-  @State curvePickValue: number = 1;
-  @State curvePickScale: number = 1;
   private reviewBusy: boolean = false;
   private reviewPressTimer: number = -1;
   private reviewCommitTimer: number = -1;
@@ -99,7 +95,6 @@ struct Index {
     $r('app.media.ic_carrot_off'),
     $r('app.media.ic_watermelon_off')
   ];
-  private readonly curveNodes: number[] = [0, 1, 2, 3, 4, 5];
   private readonly gradeNodes: number[] = [1, 2, 3, 4];
 
   aboutToAppear(): void {
@@ -290,20 +285,7 @@ struct Index {
   }
 
   private itemSubtitle(item: StudyItem): string {
-    const base = item.lastReviewedAt > 0 ? item.lastReviewedAt : item.createdAt;
-    const days = daysBetween(base, new Date());
-    const reviewNo = item.reviewCount + 1;
-    if (days === 0) {
-      return this.t('todayNode') + '  ·  ' + this.t('reviewN', reviewNo);
-    }
-    return this.t('subtitle', days, reviewNo);
-  }
-
-  private progressFor(item: StudyItem): number {
-    if (item.scheduleMode === 'fixed') {
-      return Math.min(88, 30 + item.reviewCount * 12);
-    }
-    return Math.min(92, 24 + item.curveStage * 12);
+    return this.t('times', item.reviewCount) + '  ·  ' + this.t('next') + ' ' + formatShort(item.nextReviewAt);
   }
 
   private upcoming(): DayCount[] {
@@ -322,49 +304,6 @@ struct Index {
       result.push({ date: key, count: count });
     }
     return result;
-  }
-
-  private previousLog(itemId: string): ReviewLog {
-    for (let i = 0; i < this.logs.length; i++) {
-      if (this.logs[i].itemId === itemId) {
-        return this.logs[i];
-      }
-    }
-    return {
-      id: '',
-      itemId: '',
-      reviewedAt: 0,
-      rating: '',
-      previousIntervalDays: 0,
-      nextIntervalDays: 0,
-      nextReviewAt: 0,
-      grade: 0,
-      stabilityBefore: 0,
-      stabilityAfter: 0,
-      difficultyBefore: 0,
-      difficultyAfter: 0,
-      elapsedDays: 0,
-      scheduledDays: 0
-    };
-  }
-
-  private lastRating(itemId: string): string {
-    const log = this.previousLog(itemId);
-    if (log.id.length === 0) {
-      return this.t('first');
-    }
-    if (log.rating === 'forgot') {
-      return this.t('forgot');
-    }
-    if (log.rating === 'fuzzy') {
-      return this.t('fuzzy');
-    }
-    return this.t('got');
-  }
-
-  private lastInterval(itemId: string): number {
-    const log = this.previousLog(itemId);
-    return log.id.length > 0 ? log.previousIntervalDays : 1;
   }
 
   private gradePreview(): number[] {
@@ -440,15 +379,6 @@ struct Index {
       return 0;
     }
     return daysBetween(item.lastReviewedAt, now);
-  }
-
-  private curveLabels(): string[] {
-    const labels: string[] = [this.t('todayNode')];
-    const safe = this.settings.curveDays.length >= 2 ? this.settings.curveDays : [1, 2, 4, 7, 15];
-    for (let i = 0; i < 5; i++) {
-      labels.push(this.t('days', safe[Math.min(i, safe.length - 1)]));
-    }
-    return labels;
   }
 
   private clearReviewTimers(): void {
@@ -638,7 +568,6 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      curveDays: this.settings.curveDays,
       targetRetention: this.settings.targetRetention
     };
     this.persist();
@@ -652,8 +581,19 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      curveDays: this.settings.curveDays,
       targetRetention: this.settings.targetRetention
+    };
+  }
+
+  private updateRetention(value: number): void {
+    const retention = Math.min(0.95, Math.max(0.80, Math.round(value) / 100));
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language,
+      targetRetention: retention
     };
   }
 
@@ -663,6 +603,15 @@ struct Index {
       this.toast(this.t('toastTime'));
       return;
     }
+    const retention = Math.min(0.95, Math.max(0.80, this.settings.targetRetention));
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language,
+      targetRetention: retention
+    };
     this.persist();
     this.syncReminder();
     this.toast(this.t('toastSettingsSaved'));
@@ -675,7 +624,6 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: index,
       language: this.settings.language,
-      curveDays: this.settings.curveDays,
       targetRetention: this.settings.targetRetention
     };
     this.persist();
@@ -729,44 +677,6 @@ struct Index {
     }
   }
 
-  private updateCurveDay(index: number, value: string): void {
-    const days = Number(value);
-    if (isNaN(days) || days < 1 || days > 90) {
-      return;
-    }
-    const next = this.settings.curveDays.slice();
-    next[index] = Math.round(days);
-    this.settings = {
-      reminderEnabled: this.settings.reminderEnabled,
-      reminderTime: this.settings.reminderTime,
-      subjectTimes: this.settings.subjectTimes,
-      themeIndex: this.settings.themeIndex,
-      language: this.settings.language,
-      curveDays: next,
-      targetRetention: this.settings.targetRetention
-    };
-    this.persist();
-  }
-
-  private openCurvePicker(index: number): void {
-    this.curvePickIndex = index;
-    this.curvePickValue = this.settings.curveDays[index];
-    this.showCurvePicker = true;
-    this.curvePickScale = 0.94;
-    animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
-      this.curvePickScale = 1;
-    });
-  }
-
-  private closeCurvePicker(): void {
-    this.showCurvePicker = false;
-  }
-
-  private confirmCurvePicker(): void {
-    this.updateCurveDay(this.curvePickIndex, this.curvePickValue + '');
-    this.showCurvePicker = false;
-  }
-
   private setLanguage(code: string): void {
     this.settings = {
       reminderEnabled: this.settings.reminderEnabled,
@@ -774,7 +684,6 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: code,
-      curveDays: this.settings.curveDays,
       targetRetention: this.settings.targetRetention
     };
     this.todayLabel = this.localizedToday();
@@ -1090,9 +999,6 @@ struct Index {
       if (this.showConfirm) {
         this.ConfirmOverlay()
       }
-      if (this.showCurvePicker) {
-        this.CurvePickerOverlay()
-      }
     }
     .width('100%')
     .height('100%')
@@ -1400,16 +1306,10 @@ struct Index {
       .height(30)
 
       Column() {
-        Row() {
-          Text(this.findSubject(item.subjectId).name)
-            .fontSize(10)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Tokens.muted)
-          Text(item.scheduleMode === 'fixed' ? this.t('fixed') : this.t('curve'))
-            .fontSize(9)
-            .fontColor(Tokens.mutedSoft)
-            .margin({ left: 8 })
-        }
+        Text(this.findSubject(item.subjectId).name)
+          .fontSize(10)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.muted)
         Text(item.title)
           .fontSize(21)
           .fontWeight(FontWeight.Bold)
@@ -1421,18 +1321,6 @@ struct Index {
           .fontSize(11.5)
           .fontColor(Tokens.muted)
           .margin({ top: 4 })
-        Row() {
-          Row()
-            .width(this.progressFor(item) + '%')
-            .height(3)
-            .backgroundColor(this.findSubject(item.subjectId).color)
-            .borderRadius(2)
-        }
-        .width('100%')
-        .height(3)
-        .backgroundColor('#0D5E4B30')
-        .borderRadius(2)
-        .margin({ top: 10 })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -1902,6 +1790,61 @@ struct Index {
             .margin({ top: 6 })
         }
 
+      }
+      .width('100%')
+      .padding(18)
+      .backgroundColor(Tokens.surfaceSoft)
+      .borderRadius(22)
+      .borderWidth(1)
+      .borderColor('#B3FFFFFF')
+      .translate({ y: (1 - this.calendarProgress) * 14 })
+      .opacity(Math.min(1, this.calendarProgress))
+
+      Column() {
+        Row() {
+          Column() {
+            Text(this.t('retentionTitle'))
+              .fontSize(14)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(Tokens.ink)
+            Text(this.t('retentionHint'))
+              .fontSize(9.5)
+              .fontColor(Tokens.muted)
+              .margin({ top: 3 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          Blank()
+          Text(Math.round(this.settings.targetRetention * 100) + '%')
+            .fontSize(24)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#B16A0A')
+            .margin({ left: 12 })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Slider({ value: Math.round(this.settings.targetRetention * 100), min: 80, max: 95, step: 1, style: SliderStyle.OutSet })
+          .width('100%')
+          .selectedColor(Tokens.yellow)
+          .blockColor(Tokens.yellow)
+          .trackColor('#E6DCC8')
+          .margin({ top: 12 })
+          .onChange((value: number, mode: SliderChangeMode) => {
+            this.updateRetention(value);
+          })
+
+        Row() {
+          Text('80%')
+            .fontSize(9)
+            .fontColor(Tokens.mutedSoft)
+          Blank()
+          Text('95%')
+            .fontSize(9)
+            .fontColor(Tokens.mutedSoft)
+        }
+        .width('100%')
+
         Button(this.t('saveSettings'))
           .width('100%')
           .height(42)
@@ -1914,49 +1857,6 @@ struct Index {
           .onClick(() => {
             this.saveSettings();
           })
-      }
-      .width('100%')
-      .padding(18)
-      .backgroundColor(Tokens.surfaceSoft)
-      .borderRadius(22)
-      .borderWidth(1)
-      .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 14 })
-      .opacity(Math.min(1, this.calendarProgress))
-
-      Column() {
-        Text(this.t('curveDaysTitle'))
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Tokens.muted)
-          .margin({ bottom: 10 })
-        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
-          ForEach([0, 1, 2, 3, 4, 5, 6], (index: number) => {
-            Column() {
-              Text((index + 1) + '')
-                .fontSize(8)
-                .fontColor(Tokens.mutedSoft)
-                .margin({ bottom: 3 })
-              Stack({ alignContent: Alignment.Center }) {
-                Text(this.settings.curveDays[index] + '')
-                  .fontSize(12)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(Tokens.ink)
-              }
-              .width(48)
-              .height(32)
-              .backgroundColor(Tokens.surface)
-              .borderWidth(1)
-              .borderColor('#E6DCC8')
-              .borderRadius(8)
-              .onClick(() => {
-                this.openCurvePicker(index);
-              })
-            }
-            .margin({ right: 8, bottom: 8 })
-          })
-        }
-        .width('100%')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -2197,13 +2097,12 @@ struct Index {
 
       Column() {
         if (this.isWide) {
-          Row({ space: 48 }) {
+          Row() {
             if (this.reviewStage === 'rating') {
               this.RatingCard()
             } else {
               this.EntryCard()
             }
-            this.CurvePanel()
           }
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
@@ -2216,7 +2115,6 @@ struct Index {
               } else {
                 this.EntryCard()
               }
-              this.CurvePanel()
             }
             .width('100%')
             .justifyContent(FlexAlign.Start)
@@ -2478,168 +2376,6 @@ struct Index {
     .onClick(() => {
       this.finishReview(grade);
     })
-  }
-
-  @Builder CurvePanel() {
-    Column() {
-      Text(this.t('memoryCurve'))
-        .fontSize(28)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Tokens.ink)
-        .letterSpacing(-0.6)
-      Text(this.t('reviewInterval', this.reviewItem.reviewCount + 1, this.reviewItem.currentIntervalDays))
-        .fontSize(10.5)
-        .fontColor(Tokens.muted)
-        .margin({ top: 6, bottom: 16 })
-
-      Stack() {
-        Row()
-          .width('100%')
-          .height(1)
-          .backgroundColor(Tokens.line)
-          .margin({ top: 7 })
-        Row() {
-          ForEach(this.curveNodes, (index: number) => {
-            Column() {
-              if (index < 3) {
-                Circle({ width: 10, height: 10 }).fill(Tokens.yellow)
-              } else if (index === 3) {
-                Circle({ width: 12, height: 12 })
-                  .fill(Tokens.surface)
-                  .stroke(Tokens.orange)
-                  .strokeWidth(2)
-              } else {
-                Circle({ width: 9, height: 9 })
-                  .fill(Tokens.surface)
-                  .stroke('#475E4B30')
-                  .strokeWidth(1.5)
-              }
-              Text(this.curveLabels()[index])
-                .fontSize(7)
-                .fontColor(index === 3 ? '#B16A0A' : Tokens.mutedSoft)
-                .margin({ top: 8 })
-            }
-            .layoutWeight(1)
-          })
-        }
-        .width('100%')
-      }
-      .width('100%')
-      .height(48)
-
-      Row() {
-        Row() {
-          Circle({ width: 5, height: 5 }).fill(Tokens.orange)
-          Text(this.t('lastPrefix', this.lastRating(this.reviewItem.id)))
-            .fontSize(9)
-            .fontColor(Tokens.muted)
-            .margin({ left: 6 })
-        }
-        Blank()
-        Text(this.t('days', this.lastInterval(this.reviewItem.id)) + '  →  ' + this.t('days', this.reviewItem.currentIntervalDays))
-          .fontSize(9)
-          .fontColor(Tokens.muted)
-      }
-      .width('100%')
-      .padding(12)
-      .backgroundColor(Tokens.surfaceSoft)
-      .borderRadius(12)
-      .margin({ top: 12 })
-    }
-    .width(this.isWide ? 360 : '100%')
-    .padding(20)
-    .backgroundColor('#FFFDF8')
-    .borderRadius(22)
-    .borderWidth(1)
-    .borderColor('#FFFFFF')
-  }
-
-  @Builder CurvePickerOverlay() {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(Tokens.dim)
-        .backdropBlur(6)
-        .onClick(() => {
-          this.closeCurvePicker();
-        })
-
-      Column() {
-        Text(this.t('curveDayTitle', this.curvePickIndex + 1))
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.ink)
-          .width('100%')
-        Text(this.curvePickValue + ' ' + this.t('dayUnit'))
-          .fontSize(34)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.yellow)
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .margin({ top: 12, bottom: 8 })
-        Slider({
-          value: this.curvePickValue,
-          min: 1,
-          max: 90,
-          step: 1,
-          style: SliderStyle.OutSet
-        })
-          .width('100%')
-          .selectedColor(Tokens.yellow)
-          .blockColor(Tokens.yellow)
-          .trackColor('#E6DCC8')
-          .onChange((value: number, mode: SliderChangeMode) => {
-            this.curvePickValue = Math.round(value);
-          })
-        Row() {
-          Text('1')
-            .fontSize(9)
-            .fontColor(Tokens.mutedSoft)
-          Blank()
-          Text('90')
-            .fontSize(9)
-            .fontColor(Tokens.mutedSoft)
-        }
-        .width('100%')
-
-        Row({ space: 10 }) {
-          Button(this.t('cancel'))
-            .layoutWeight(1)
-            .height(42)
-            .fontSize(12)
-            .fontColor(Tokens.inkSoft)
-            .backgroundColor(Tokens.surfaceSoft)
-            .borderRadius(12)
-            .onClick(() => {
-              this.closeCurvePicker();
-            })
-          Button(this.t('save'))
-            .layoutWeight(1)
-            .height(42)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#3D2A00')
-            .backgroundColor(Tokens.yellow)
-            .borderRadius(12)
-            .onClick(() => {
-              this.confirmCurvePicker();
-            })
-        }
-        .width('100%')
-        .margin({ top: 18 })
-      }
-      .width(this.isWide ? 420 : '84%')
-      .padding(24)
-      .backgroundColor(Tokens.surface)
-      .borderRadius(24)
-      .borderWidth(1)
-      .borderColor('#CCFFFFFF')
-      .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
-      .scale({ x: this.curvePickScale, y: this.curvePickScale })
-    }
-    .width('100%')
-    .height('100%')
   }
 
   @Builder ConfirmOverlay() {

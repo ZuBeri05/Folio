@@ -63,7 +63,6 @@ export interface Settings {
   subjectTimes: SubjectTime[];
   themeIndex: number;
   language: string;
-  curveDays: number[];
   targetRetention: number;
 }
 
@@ -132,7 +131,6 @@ export function createDefaultData(): AppData {
       subjectTimes: [],
       themeIndex: 0,
       language: 'zh',
-      curveDays: [1, 2, 4, 7, 15, 30, 60],
       targetRetention: 0.9
     }
   };

@@ -59,7 +59,6 @@ export interface LegacySettings {
   subjectTimes: LegacySubjectTime[];
   themeIndex: number;
   language: string;
-  curveDays: number[];
 }
 
 export interface MigratedSettings extends LegacySettings {
@@ -230,7 +229,6 @@ function migrateSettings(settings: LegacySettings): MigratedSettings {
     subjectTimes: settings.subjectTimes,
     themeIndex: settings.themeIndex,
     language: settings.language,
-    curveDays: settings.curveDays,
     targetRetention: isValidTargetRetention(candidate.targetRetention) ? candidate.targetRetention : 0.90
   };
 }
