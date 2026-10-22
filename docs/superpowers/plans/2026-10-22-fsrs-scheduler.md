@@ -1051,6 +1051,7 @@ git commit -m "feat: add four-grade FSRS rating UI"
 Delete:
 
 - curveDays from Models.ets Settings and from createDefaultData
+- The due-row mode label (scheduleMode === 'fixed' ? fixed : curve) and the curveStage progress bar. For FSRS rows, show reviewCount + next date only; do not display fixed/curve anywhere.
 - curveDaysTitle card and seven day buttons
 - openCurvePicker, closeCurvePicker, confirmCurvePicker
 - CurvePickerOverlay builder and showCurvePicker state
