@@ -1045,6 +1045,7 @@ git commit -m "feat: add four-grade FSRS rating UI"
 **Files:**
 - Modify: app/entry/src/main/ets/pages/Index.ets
 - Modify: app/entry/src/main/ets/domain/Models.ets
+- Modify: app/entry/src/main/ets/domain/Scheduling.ets
 
 - [ ] **Step 1: Remove curve UI and curveDays**
 
@@ -1056,6 +1057,7 @@ Delete:
 - openCurvePicker, closeCurvePicker, confirmCurvePicker
 - CurvePickerOverlay builder and showCurvePicker state
 - CurvePanel builder and curveLabels usage
+- Dead domain helpers scheduleNext, ratingLabel, firstReviewAt, and the CURVE constant if unused
 
 - [ ] **Step 2: Add retention card**
 
