@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fsrsStateFromItem,
   nextDueAt,
   postponeToTomorrow,
   previewForGrades,
@@ -75,6 +76,54 @@ describe('FSRS scheduling adapter', () => {
       expect(intervals[i]).toBeGreaterThanOrEqual(1);
     }
     expect(intervals[3]).toBeGreaterThanOrEqual(intervals[0]);
+  });
+
+  it('preserves stored FSRS state for reviewed items marked new', () => {
+    const now = new Date(2026, 9, 22, 22, 30).getTime();
+    const item = {
+      ...reviewedItem,
+      fsrsState: 'new',
+      fsrsStability: 9,
+      fsrsDifficulty: 7,
+      fsrsScheduledDays: 9,
+      fsrsLapses: 2
+    };
+    const state = fsrsStateFromItem(item as any);
+    expect(state.state).toBe('review');
+    expect(state.stability).toBe(9);
+    expect(state.difficulty).toBe(7);
+    expect(state.lapses).toBe(2);
+    expect(state.scheduledDays).toBe(9);
+
+    const result = scheduleFsrs(item as any, 3, now, 0.9);
+    expect(result.state).toBe('review');
+    expect(result.stability).toBeGreaterThan(9);
+    expect(result.difficulty).toBeGreaterThan(6.9);
+    expect(result.lapses).toBe(2);
+  });
+
+  it('falls back when reviewed FSRS values are non-finite', () => {
+    const now = new Date(2026, 9, 22, 22, 30).getTime();
+    const item = {
+      ...reviewedItem,
+      fsrsState: 'bogus',
+      fsrsStability: NaN,
+      fsrsDifficulty: NaN,
+      fsrsScheduledDays: NaN,
+      fsrsLapses: NaN,
+      currentIntervalDays: 6
+    };
+    const state = fsrsStateFromItem(item as any);
+    expect(state.state).toBe('review');
+    expect(state.stability).toBe(6);
+    expect(state.difficulty).toBe(5);
+    expect(state.lapses).toBe(0);
+    expect(state.scheduledDays).toBe(6);
+
+    const result = scheduleFsrs(item as any, 3, now, 0.9);
+    expect(Number.isFinite(result.stability)).toBe(true);
+    expect(Number.isFinite(result.difficulty)).toBe(true);
+    expect(result.nextIntervalDays).toBeGreaterThanOrEqual(1);
   });
 
   it('postpone changes only the due date', () => {
