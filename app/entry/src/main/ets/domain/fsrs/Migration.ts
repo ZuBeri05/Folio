@@ -81,8 +81,62 @@ export interface MigratedAppData {
   settings: MigratedSettings;
 }
 
+function isFiniteNumber(value: number): boolean {
+  return typeof value === 'number' && isFinite(value);
+}
+
+function isValidTargetRetention(value: number): boolean {
+  return isFiniteNumber(value) && value >= 0.80 && value <= 0.95;
+}
+
+export function isValidFsrsItem(item: LegacyStudyItem): boolean {
+  const candidate = item as MigratedStudyItem;
+  if (candidate.fsrsVersion !== 6) {
+    return false;
+  }
+  if (!isFiniteNumber(candidate.fsrsStability) || !isFiniteNumber(candidate.fsrsDifficulty)) {
+    return false;
+  }
+  if (!isFiniteNumber(candidate.fsrsScheduledDays) || !isFiniteNumber(candidate.fsrsLapses)) {
+    return false;
+  }
+  if (typeof candidate.fsrsState !== 'string') {
+    return false;
+  }
+  if (candidate.reviewCount > 0 && (candidate.fsrsState === 'new' || !(candidate.fsrsStability > 0))) {
+    return false;
+  }
+  return candidate.fsrsStability >= 0 && candidate.fsrsStability <= 36500 &&
+    candidate.fsrsDifficulty >= 1 && candidate.fsrsDifficulty <= 10 &&
+    candidate.fsrsScheduledDays >= 0 && candidate.fsrsLapses >= 0;
+}
+
+export function needsMigration(data: LegacyAppData): boolean {
+  const candidate = data as MigratedAppData;
+  if (candidate.schemaVersion !== 2) {
+    return true;
+  }
+  if (!Array.isArray(candidate.items) ||
+      candidate.items.some((item: MigratedStudyItem) => !isValidFsrsItem(item))) {
+    return true;
+  }
+  if (!Array.isArray(candidate.logs) ||
+      candidate.logs.some((log: MigratedReviewLog) => !isFiniteNumber(log.grade))) {
+    return true;
+  }
+  if (!candidate.settings || !isValidTargetRetention(candidate.settings.targetRetention)) {
+    return true;
+  }
+  return false;
+}
+
 export function migrateItem(item: LegacyStudyItem): MigratedStudyItem {
+  if (isValidFsrsItem(item)) {
+    return item as MigratedStudyItem;
+  }
   const reviewed = item.reviewCount > 0;
+  const currentInterval = isFiniteNumber(item.currentIntervalDays) ? item.currentIntervalDays : 0;
+  const migratedInterval = reviewed ? Math.max(1, currentInterval) : 0;
   return {
     id: item.id,
     subjectId: item.subjectId,
@@ -96,10 +150,10 @@ export function migrateItem(item: LegacyStudyItem): MigratedStudyItem {
     lastReviewedAt: item.lastReviewedAt,
     reviewCount: item.reviewCount,
     status: item.status,
-    fsrsStability: reviewed ? Math.max(1, item.currentIntervalDays) : 0,
+    fsrsStability: migratedInterval,
     fsrsDifficulty: 5,
     fsrsState: reviewed ? 'review' : 'new',
-    fsrsScheduledDays: item.currentIntervalDays,
+    fsrsScheduledDays: migratedInterval,
     fsrsLapses: 0,
     fsrsVersion: 6
   };
@@ -116,6 +170,12 @@ function migratedGrade(rating: string): number {
 }
 
 function migrateLog(log: LegacyReviewLog): MigratedReviewLog {
+  const candidate = log as MigratedReviewLog;
+  if (isFiniteNumber(candidate.grade)) {
+    return candidate;
+  }
+  const previousInterval = isFiniteNumber(log.previousIntervalDays) ? log.previousIntervalDays : 0;
+  const nextInterval = isFiniteNumber(log.nextIntervalDays) ? log.nextIntervalDays : 0;
   return {
     id: log.id,
     itemId: log.itemId,
@@ -129,12 +189,13 @@ function migrateLog(log: LegacyReviewLog): MigratedReviewLog {
     stabilityAfter: 0,
     difficultyBefore: 0,
     difficultyAfter: 0,
-    elapsedDays: Math.max(0, Math.round(log.previousIntervalDays)),
-    scheduledDays: Math.max(0, Math.round(log.nextIntervalDays))
+    elapsedDays: Math.max(0, Math.round(previousInterval)),
+    scheduledDays: Math.max(0, Math.round(nextInterval))
   };
 }
 
 function migrateSettings(settings: LegacySettings): MigratedSettings {
+  const candidate = settings as MigratedSettings;
   return {
     reminderEnabled: settings.reminderEnabled,
     reminderTime: settings.reminderTime,
@@ -142,7 +203,7 @@ function migrateSettings(settings: LegacySettings): MigratedSettings {
     themeIndex: settings.themeIndex,
     language: settings.language,
     curveDays: settings.curveDays,
-    targetRetention: 0.9
+    targetRetention: isValidTargetRetention(candidate.targetRetention) ? candidate.targetRetention : 0.90
   };
 }
 

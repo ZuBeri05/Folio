@@ -1,6 +1,7 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { AppData, createDefaultData } from '../domain/Models';
+import { migrateAppData, needsMigration } from '../domain/fsrs/Migration';
 
 const STORE_NAME: string = 'jiesheng_app';
 const DATA_KEY: string = 'app_data_v1';
@@ -53,6 +54,16 @@ export class Store {
       }
       if (!hasMajor) {
         parsed.subjects.push({ id: 'major', name: '专业课', color: '#8E7CC3' });
+      }
+      try {
+        if (needsMigration(parsed)) {
+          const migrated = migrateAppData(parsed);
+          await Store.save(context, migrated as AppData);
+          return migrated as AppData;
+        }
+      } catch (error) {
+        console.error('FSRS migration failed; keeping parsed data', error);
+        return parsed;
       }
       return parsed;
     } catch (error) {
