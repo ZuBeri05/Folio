@@ -2,7 +2,7 @@ import { postponeToTomorrow, previewForGrades, scheduleFsrs } from './fsrs/Sched
 
 export { postponeToTomorrow, previewForGrades, scheduleFsrs };
 
-export const DAY_MS: number = 86400000;
+const DAY_MS: number = 86400000;
 
 export function startOfDay(value: Date): Date {
   const date = new Date(value.getTime());
@@ -14,10 +14,6 @@ export function addDays(value: Date, days: number): Date {
   const date = new Date(value.getTime());
   date.setDate(date.getDate() + days);
   return date;
-}
-
-export function dayKey(value: Date): number {
-  return startOfDay(value).getTime();
 }
 
 export function daysBetween(from: number, to: Date): number {
