@@ -1094,30 +1094,34 @@ git commit -m "feat: replace curve settings with retention slider"
 
 **Files:**
 - Modify: app/AppScope/app.json5
-- Modify: app/entry/src/main/resources/base/element/string.json
+- Modify: app/entry/src/main/ets/services/I18n.ets
+- Modify: app/entry/src/main/ets/domain/Scheduling.ets
 
-- [ ] **Step 1: Bump version**
+- [ ] **Step 1: Remove dead classic symbols**
 
-Set versionName 1.1.0 and increment versionCode from 1000000 to 1000001.
+Remove the unused i18n keys curveDaysTitle, curveDayTitle, memoryCurve, reviewInterval, lastPrefix, curve, curveShort, fixed from all six language blocks. Remove the unused dayKey export from Scheduling.ets and unexport DAY_MS if it has no external callers. Run a grep to prove no remaining references.
 
-- [ ] **Step 2: Run the full test suite**
+- [ ] **Step 2: Bump version**
+
+Set versionName 1.1.0 and versionCode 1000001 in app/AppScope/app.json5. Do not touch the submitted 1.0.0 artifact.
+
+- [ ] **Step 3: Run the full test suite**
 
 ~~~powershell
 cd jiesheng/tests
 npx vitest run
 ~~~
 
-Expected: all FSRS and migration tests pass.
+Expected: all tests pass.
 
-- [ ] **Step 3: Build debug on phone/tablet emulator**
+- [ ] **Step 4: Build debug on phone/tablet emulator**
 
 ~~~powershell
 cd jiesheng/app
 node ../.tools/node_modules/@deveco/deveco-cli/cli.js build --build-mode debug
 ~~~
 
-Install on 127.0.0.1:5555 and 127.0.0.1:5557, then verify:
-
+Install on 127.0.0.1:5555 and 127.0.0.1:5557 and verify:
 - old records survive migration
 - due item shows postpone/complete
 - four grades show intervals
@@ -1125,19 +1129,21 @@ Install on 127.0.0.1:5555 and 127.0.0.1:5557, then verify:
 - retention slider persists after restart
 - no curve settings remain
 
-- [ ] **Step 4: Build release and verify signature**
+- [ ] **Step 5: Build versioned release artifacts**
 
 ~~~powershell
-cd jiesheng
-./scripts/build-release.ps1
+cd jiesheng/app
+node ../.tools/node_modules/@deveco/deveco-cli/cli.js build --assemble-type assembleApp --build-mode release --signing-config default_release
 ~~~
 
-Then verify the .app and .hap with hap-sign-tool. Do not upload until 1.0.0 review is complete.
+Copy the signed .app and HAP to dist/Folio-1.1.0-release.app and dist/Folio-1.1.0-release.hap. Do NOT overwrite dist/Folio-1.0.0-* or upload anything to AppGallery while 1.0.0 is under review.
 
-- [ ] **Step 5: Commit**
+Verify both artifacts with hap-sign-tool verify-app.
+
+- [ ] **Step 6: Commit**
 
 ~~~powershell
-git add app/AppScope/app.json5 app/entry/src/main/resources/base/element/string.json
+git add app/AppScope/app.json5 app/entry/src/main/ets/services/I18n.ets app/entry/src/main/ets/domain/Scheduling.ets
 git commit -m "chore: bump Folio to 1.1.0 for FSRS"
 ~~~
 
