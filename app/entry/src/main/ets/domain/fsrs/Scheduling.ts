@@ -132,14 +132,42 @@ export function fsrsStateFromItem(item: SchedulingItem): FsrsState {
   };
 }
 
+export function fixedIntervalFor(item: SchedulingItem, grade: number): number {
+  const base = Math.max(1, Math.min(90, Math.round(item.fixedIntervalDays)));
+  if (grade === 1) {
+    return 1;
+  }
+  if (grade === 2) {
+    return Math.max(1, Math.round(base / 2));
+  }
+  if (grade === 4) {
+    return Math.max(base + 1, Math.round(base * 1.5));
+  }
+  return base;
+}
+
 export function scheduleFsrs(
   item: SchedulingItem,
   grade: number,
   now: number,
   retention: number
 ): FsrsScheduleResult {
-  const state = fsrsStateFromItem(item);
   const safe = safeGrade(grade);
+  if (item.scheduleMode === 'fixed') {
+    const days = fixedIntervalFor(item, safe);
+    return {
+      nextAt: nextDueAt(now, days),
+      nextIntervalDays: days,
+      curveStage: isFiniteNumber(item.curveStage) ? item.curveStage : 0,
+      rating: String(safe),
+      stability: isFiniteNumber(item.fsrsStability) ? item.fsrsStability : 0,
+      difficulty: isFiniteNumber(item.fsrsDifficulty) ? item.fsrsDifficulty : 5,
+      state: isFiniteNumber(item.reviewCount) && item.reviewCount > 0 ? 'review' : 'new',
+      lapses: isFiniteNumber(item.fsrsLapses) ? item.fsrsLapses : 0,
+      scheduledDays: days
+    };
+  }
+  const state = fsrsStateFromItem(item);
   const reviewed = review(state, safe, elapsedDays(item, now), safeRetention(retention), now);
   const days = safeDays(reviewed.scheduledDays);
   return {
@@ -156,6 +184,13 @@ export function scheduleFsrs(
 }
 
 export function previewForGrades(item: SchedulingItem, now: number, retention: number): number[] {
+  if (item.scheduleMode === 'fixed') {
+    const result: number[] = [];
+    for (let grade = 1; grade <= 4; grade++) {
+      result.push(fixedIntervalFor(item, grade));
+    }
+    return result;
+  }
   const state = fsrsStateFromItem(item);
   const previews: FsrsPreview[] = preview(state, elapsedDays(item, now), safeRetention(retention), now);
   const intervals: number[] = [];

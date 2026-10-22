@@ -25,6 +25,8 @@ struct Index {
   @State showComposer: boolean = false;
   @State draftSubjectId: string = 'math';
   @State draftTitle: string = '';
+  @State draftMode: string = 'fsrs';
+  @State draftFixedDays: number = 3;
   @State newSubjectName: string = '';
   @State calendarProgress: number = 1;
   @State calendarX: number[] = [0, 0, 0, 0, 0, 0, 0];
@@ -405,6 +407,7 @@ struct Index {
   }
 
   private openReview(item: StudyItem): void {
+    this.getUIContext().getFocusController().clearFocus();
     this.discardPendingReview();
     this.reviewItem = item;
     this.reviewStage = 'entry';
@@ -429,7 +432,11 @@ struct Index {
   }
 
   private startRating(): void {
-    this.reviewStage = 'rating';
+    this.reviewScale = 0.96;
+    animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+      this.reviewStage = 'rating';
+      this.reviewScale = 1;
+    });
   }
 
   private postponeReview(): void {
@@ -1460,6 +1467,72 @@ struct Index {
         })
 
       Row() {
+          Text(this.t('reviewMode'))
+            .fontSize(9)
+            .fontColor(Tokens.muted)
+          Blank()
+          Button(this.t('fsrsMode'))
+            .height(28)
+            .fontSize(9.5)
+            .fontColor(this.draftMode === 'fsrs' ? '#3D2A00' : Tokens.inkSoft)
+            .backgroundColor(this.draftMode === 'fsrs' ? Tokens.yellow : Tokens.surface)
+            .borderWidth(1)
+            .borderColor(this.draftMode === 'fsrs' ? '#CCFFC531' : Tokens.line)
+            .borderRadius(14)
+            .padding({ left: 12, right: 12 })
+            .onClick(() => {
+              this.draftMode = 'fsrs';
+            })
+          Button(this.t('fixedMode'))
+            .height(28)
+            .fontSize(9.5)
+            .fontColor(this.draftMode === 'fixed' ? '#3D2A00' : Tokens.inkSoft)
+            .backgroundColor(this.draftMode === 'fixed' ? Tokens.yellow : Tokens.surface)
+            .borderWidth(1)
+            .borderColor(this.draftMode === 'fixed' ? '#CCFFC531' : Tokens.line)
+            .borderRadius(14)
+            .padding({ left: 12, right: 12 })
+            .margin({ left: 6 })
+            .onClick(() => {
+              this.draftMode = 'fixed';
+            })
+        }
+        .width('100%')
+        .margin({ top: 14 })
+
+        if (this.draftMode === 'fixed') {
+          Row() {
+            Button('-')
+              .width(34)
+              .height(30)
+              .fontSize(14)
+              .fontColor(Tokens.inkSoft)
+              .backgroundColor(Tokens.surface)
+              .borderRadius(10)
+              .onClick(() => {
+                this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
+              })
+            Text(this.t('fixedDaysHint', this.draftFixedDays))
+              .layoutWeight(1)
+              .fontSize(10)
+              .fontColor(Tokens.muted)
+              .textAlign(TextAlign.Center)
+            Button('+')
+              .width(34)
+              .height(30)
+              .fontSize(14)
+              .fontColor(Tokens.inkSoft)
+              .backgroundColor(Tokens.surface)
+              .borderRadius(10)
+              .onClick(() => {
+                this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
+              })
+          }
+          .width('100%')
+          .margin({ top: 8 })
+        }
+
+        Row() {
         Column() {
           Text(this.t('remindMe'))
             .fontSize(11)
@@ -2094,6 +2167,9 @@ struct Index {
         .width('100%')
         .height('100%')
         .backgroundColor(Tokens.dim)
+          .onClick(() => {
+            this.closeReview();
+          })
 
       Column() {
         if (this.isWide) {
@@ -2134,6 +2210,7 @@ struct Index {
       .height('100%')
       .padding({ left: this.isWide ? 40 : 16, right: this.isWide ? 40 : 16, top: 10, bottom: 20 })
       .backgroundColor(this.isWide ? '#00000000' : Tokens.bg)
+        .hitTestBehavior(HitTestMode.Transparent)
     }
     .width('100%')
     .height('100%')

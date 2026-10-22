@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fixedIntervalFor,
   fsrsStateFromItem,
   nextDueAt,
   postponeToTomorrow,
@@ -147,5 +148,29 @@ describe('FSRS scheduling adapter', () => {
     const now = new Date(2026, 9, 22, 22, 30).getTime();
     const next = postponeToTomorrow(reviewedItem as any, now);
     expect(next).toEqual({ ...reviewedItem, nextReviewAt: nextDueAt(now, 1) });
+  });
+});
+
+describe('fixed interval scheduling', () => {
+  const fixedItem = {
+    ...reviewedItem,
+    scheduleMode: 'fixed',
+    fixedIntervalDays: 10
+  };
+
+  it('previews fixed intervals for all four grades', () => {
+    const now = new Date(2026, 9, 22).getTime();
+    expect(previewForGrades(fixedItem as any, now, 0.9)).toEqual([1, 5, 10, 15]);
+    expect(fixedIntervalFor(fixedItem as any, 3)).toBe(10);
+  });
+
+  it('schedules a fixed item without changing FSRS state', () => {
+    const now = new Date(2026, 9, 22).getTime();
+    const good = scheduleFsrs(fixedItem as any, 3, now, 0.9);
+    expect(good.nextIntervalDays).toBe(10);
+    expect(good.nextAt).toBe(nextDueAt(now, 10));
+    expect(good.stability).toBe(reviewedItem.fsrsStability);
+    expect(scheduleFsrs(fixedItem as any, 4, now, 0.9).nextIntervalDays).toBe(15);
+    expect(scheduleFsrs(fixedItem as any, 1, now, 0.9).nextIntervalDays).toBe(1);
   });
 });

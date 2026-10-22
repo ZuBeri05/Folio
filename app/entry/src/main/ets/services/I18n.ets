@@ -220,7 +220,11 @@ export class I18n {
     "postponedTomorrow", "已推迟到明天",
     "nextReviewToast", "下次复习：{0}",
     "retentionTitle", "记忆保持率",
-    "retentionHint", "评分后按目标记忆率安排下次复习"
+    "retentionHint", "评分后按目标记忆率安排下次复习",
+      "reviewMode", "复习方式",
+      "fsrsMode", "FSRS",
+      "fixedMode", "固定间隔",
+      "fixedDaysHint", "每隔 {0} 天复习"
   ]);
 
   private static readonly en: Map<string, string> = I18n.make([
@@ -421,7 +425,11 @@ export class I18n {
     "postponedTomorrow", "Postponed to tomorrow",
     "nextReviewToast", "Next review: {0}",
     "retentionTitle", "Target retention",
-    "retentionHint", "The next review is scheduled for your target retention"
+    "retentionHint", "The next review is scheduled for your target retention",
+      "reviewMode", "Review mode",
+      "fsrsMode", "FSRS",
+      "fixedMode", "Fixed interval",
+      "fixedDaysHint", "Review every {0} days"
   ]);
 
   private static readonly ja: Map<string, string> = I18n.make([
