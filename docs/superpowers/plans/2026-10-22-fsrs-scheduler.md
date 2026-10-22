@@ -826,11 +826,13 @@ git commit -m "feat: run idempotent FSRS migration in Store"
 ### Task 5: Replace Scheduling with FSRS and add postpone
 
 **Files:**
+- Modify: app/entry/src/main/ets/domain/fsrs/Scheduling.ts
 - Modify: app/entry/src/main/ets/domain/Scheduling.ets
 - Modify: tests/scheduling.test.ts
 
 **Interfaces:**
-- Produces: scheduleFsrs(item, grade, now, retention): ReviewResult; postponeToTomorrow(item, now): StudyItem; previewForGrades(item, now, retention): number[]
+- Pure producers in fsrs/Scheduling.ts: scheduleFsrs(item, grade, now, retention), postponeToTomorrow(item, now), previewForGrades(item, now, retention)
+- Scheduling.ets re-exports those functions for the UI; it does not duplicate the math.
 
 - [ ] **Step 1: Write tests for postpone semantics**
 
@@ -848,30 +850,34 @@ it('postpone changes only the due date', () => {
 });
 ~~~
 
-- [ ] **Step 2: Implement adapter**
+- [ ] **Step 2: Implement the FSRS adapter in fsrs/Scheduling.ts**
 
-In Scheduling.ets, replace scheduleNext with scheduleFsrs that:
+Add pure functions there:
 
-- builds FsrsState from item fields
-- calls review()
-- sets nextReviewAt = nextDueAt(now, result.scheduledDays)
-- returns nextIntervalDays=result.scheduledDays, curveStage=item.curveStage, rating=String(grade)
+- fsrsStateFromItem(item): build a valid FsrsState; for a new item use state new with S=0/D=5; for a reviewed item use stored S/D.
+- scheduleFsrs(item, grade, now, retention): call review(), round the result with roundFsrsDays(), set nextAt = nextDueAt(now, days), and return ReviewResult with curveStage preserved and rating=String(grade).
+- previewForGrades(item, now, retention): call preview() for grades 1-4 and return the four integer intervals.
+- postponeToTomorrow(item, now): copy the item explicitly (no object spread) and set nextReviewAt = nextDueAt(now, 1); do not change S/D, reviewCount, or logs.
 
-Implement postponeToTomorrow by copying item and setting nextReviewAt = nextDueAt(now, 1).
+In Scheduling.ets import and re-export these functions. Remove the compile-only fsrsCoreReady function; it must not ship dead code. Guard non-finite S/D/interval values by falling back to max(1, round(raw)).
 
-- [ ] **Step 3: Run tests**
+Add tests for scheduleFsrs (date and S/D update), previewForGrades (four positive intervals), and postponeToTomorrow (only date changes).
+
+- [ ] **Step 3: Run tests and the ArkTS build**
 
 ~~~powershell
 cd jiesheng/tests
 npx vitest run scheduling.test.ts
+cd ../app
+node ../.tools/node_modules/@deveco/deveco-cli/cli.js build --build-mode debug
 ~~~
 
-Expected: PASS.
+Expected: tests PASS and BUILD SUCCESSFUL with CompileArkTS executed.
 
 - [ ] **Step 4: Commit**
 
 ~~~powershell
-git add app/entry/src/main/ets/domain/Scheduling.ets tests/scheduling.test.ts
+git add app/entry/src/main/ets/domain/fsrs/Scheduling.ts app/entry/src/main/ets/domain/Scheduling.ets tests/scheduling.test.ts
 git commit -m "feat: route scheduling through FSRS"
 ~~~
 
