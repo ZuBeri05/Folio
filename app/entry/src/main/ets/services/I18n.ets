@@ -220,7 +220,22 @@ export class I18n {
 ,
     "curveDaysTitle", "遗忘曲线天数"
 ,
-    "curveDayTitle", "第 {0} 次间隔"
+    "curveDayTitle", "第 {0} 次间隔",
+    "postponeTomorrow", "推迟到明天",
+    "completeReview", "完成复习",
+    "rateTitle", "这次记得怎么样？",
+    "gradeAgain", "忘记",
+    "gradeHard", "困难",
+    "gradeGood", "良好",
+    "gradeEasy", "简单",
+    "gradeAgainHint", "完全没想起来",
+    "gradeHardHint", "想得很吃力",
+    "gradeGoodHint", "正常想起来",
+    "gradeEasyHint", "几乎秒答",
+    "postponedTomorrow", "已推迟到明天",
+    "nextReviewToast", "下次复习：{0}",
+    "retentionTitle", "记忆保持率",
+    "retentionHint", "评分后按目标记忆率安排下次复习"
   ]);
 
   private static readonly en: Map<string, string> = I18n.make([
@@ -421,7 +436,22 @@ export class I18n {
 ,
     "curveDaysTitle", "Spaced repetition days"
 ,
-    "curveDayTitle", "Interval {0}"
+    "curveDayTitle", "Interval {0}",
+    "postponeTomorrow", "Postpone to tomorrow",
+    "completeReview", "Complete review",
+    "rateTitle", "How well did you remember?",
+    "gradeAgain", "Again",
+    "gradeHard", "Hard",
+    "gradeGood", "Good",
+    "gradeEasy", "Easy",
+    "gradeAgainHint", "Could not recall",
+    "gradeHardHint", "Recalled with effort",
+    "gradeGoodHint", "Recalled normally",
+    "gradeEasyHint", "Recalled instantly",
+    "postponedTomorrow", "Postponed to tomorrow",
+    "nextReviewToast", "Next review: {0}",
+    "retentionTitle", "Target retention",
+    "retentionHint", "The next review is scheduled for your target retention"
   ]);
 
   private static readonly ja: Map<string, string> = I18n.make([

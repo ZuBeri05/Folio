@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { promptAction, LengthMetrics, KeyboardAvoidMode, window } from '@kit.ArkUI';
 import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
 import { Store } from '../data/Store';
-import { scheduleNext, firstReviewAt, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
+import { scheduleNext, postponeToTomorrow, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN, ratingLabel } from '../domain/Scheduling';
 import { ReminderService } from '../services/ReminderService';
 import { Tokens } from '../theme/Tokens';
 import { I18n, LanguageOption } from '../services/I18n';
@@ -20,16 +20,14 @@ struct Index {
   @State isWide: boolean = true;
   @State showReview: boolean = false;
   @State reviewItem: StudyItem = emptyItem();
+  @State reviewStage: string = 'entry';
   @State showComposer: boolean = false;
   @State draftSubjectId: string = 'math';
   @State draftTitle: string = '';
-  @State draftMode: string = 'curve';
-  @State draftFixedDays: number = 3;
   @State newSubjectName: string = '';
   @State calendarProgress: number = 1;
   @State calendarX: number[] = [0, 0, 0, 0, 0, 0, 0];
   @State calendarAlpha: number[] = [1, 1, 1, 1, 1, 1, 1];
-  @State dotVisible: number = 6;
   @State formProgress: number = 1;
   @State titleFocused: boolean = false;
   @State titleBorderColor: string = '#B3FFFFFF';
@@ -119,7 +117,6 @@ struct Index {
       this.draftSubjectId = this.subjects[0].id;
     }
     this.playEntry();
-    this.playDots();
     this.playForm();
     this.refreshNotificationState();
     if (this.settings.reminderEnabled && this.items.length > 0) {
@@ -154,7 +151,6 @@ struct Index {
 
   private openComposer(): void {
     this.showComposer = true;
-    this.playDots();
     this.playForm();
     this.composerScale = 0.92;
     this.composerShift = 24;
@@ -278,7 +274,6 @@ struct Index {
       });
       if (next === 0) {
         this.playEntry();
-        this.playDots();
         this.playForm();
       }
       if (next === 2) {
@@ -383,11 +378,31 @@ struct Index {
 
   private openReview(item: StudyItem): void {
     this.reviewItem = item;
+    this.reviewStage = 'entry';
     this.showReview = true;
     this.reviewScale = 0.94;
-    animateTo({ duration: 360, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
       this.reviewScale = 1;
     });
+  }
+
+  private closeReview(): void {
+    this.showReview = false;
+    this.reviewStage = 'entry';
+    this.reviewScale = 1;
+  }
+
+  private startRating(): void {
+    this.reviewStage = 'rating';
+  }
+
+  private postponeReview(): void {
+    const next = postponeToTomorrow(this.reviewItem, Date.now());
+    this.items = this.items.map((item: StudyItem) => item.id === next.id ? next : item);
+    this.closeReview();
+    this.persist();
+    this.syncReminder();
+    this.toast(this.t('postponedTomorrow'));
   }
 
   private finishReview(rating: string): void {
@@ -452,8 +467,7 @@ struct Index {
       scheduledDays: result.nextIntervalDays
     };
     this.logs = [log, ...this.logs];
-    this.showReview = false;
-    this.reviewScale = 1;
+    this.closeReview();
     this.pressedRating = '';
     this.reviewBusy = false;
     this.persist();
@@ -468,7 +482,7 @@ struct Index {
       return;
     }
     const now = new Date();
-    const firstAt = firstReviewAt(this.draftMode, this.draftFixedDays, now, this.settings.curveDays);
+    const dueToday = startOfDay(now).getTime();
     const item: StudyItem = {
       id: newId(),
       subjectId: this.draftSubjectId,
@@ -476,9 +490,9 @@ struct Index {
       createdAt: now.getTime(),
       scheduleMode: 'fsrs',
       curveStage: 0,
-      fixedIntervalDays: this.draftFixedDays,
-      currentIntervalDays: this.draftMode === 'fixed' ? this.draftFixedDays : 1,
-      nextReviewAt: firstAt,
+      fixedIntervalDays: 3,
+      currentIntervalDays: 1,
+      nextReviewAt: dueToday,
       lastReviewedAt: 0,
       reviewCount: 0,
       status: 'active',
@@ -497,7 +511,7 @@ struct Index {
     this.switchTab(0);
     this.persist();
     this.syncReminder();
-    this.toast(this.t('toastSaved', formatDate(firstAt)));
+    this.toast(this.t('toastSaved', formatDate(item.nextReviewAt)));
   }
 
   private updateReminderEnabled(value: boolean): void {
@@ -873,7 +887,7 @@ struct Index {
     this.items = this.items.filter((item: StudyItem) => item.id !== id);
     this.logs = this.logs.filter((log: ReviewLog) => log.itemId !== id);
     if (this.reviewItem.id === id) {
-      this.showReview = false;
+      this.closeReview();
     }
     this.persist();
     this.syncReminder();
@@ -885,15 +899,6 @@ struct Index {
     animateTo({ duration: 520, curve: Curve.EaseOut }, () => {
       this.formProgress = 1;
     });
-  }
-
-  private playDots(): void {
-    this.dotVisible = 0;
-    for (let i = 0; i < 6; i++) {
-      setTimeout(() => {
-        this.dotVisible = i + 1;
-      }, i * 110);
-    }
   }
 
   private playCalendarRows(): void {
@@ -1448,150 +1453,6 @@ struct Index {
         .onChange((value: string) => {
           this.draftTitle = value;
         })
-
-      Text(this.t('plan'))
-        .fontSize(9)
-        .fontColor(Tokens.muted)
-        .margin({ top: 18, bottom: 8 })
-
-      Stack({ alignContent: Alignment.Start }) {
-        Row()
-          .width('50%')
-          .height(32)
-          .backgroundColor(Tokens.surface)
-          .borderRadius(9)
-          .translate({ x: this.draftMode === 'curve' ? 0 : '100%' })
-          .animation({ duration: 220, curve: Curve.EaseOut })
-
-        Row() {
-          Button(this.t('curve'))
-            .layoutWeight(1)
-            .height(32)
-            .fontSize(11)
-            .fontColor(this.draftMode === 'curve' ? Tokens.ink : Tokens.muted)
-            .backgroundColor(Color.Transparent)
-            .borderRadius(9)
-            .animation({ duration: 180, curve: Curve.EaseOut })
-            .onClick(() => {
-              this.draftMode = 'curve';
-              this.playDots();
-            })
-          Button(this.t('fixed'))
-            .layoutWeight(1)
-            .height(32)
-            .fontSize(11)
-            .fontColor(this.draftMode === 'fixed' ? Tokens.ink : Tokens.muted)
-            .backgroundColor(Color.Transparent)
-            .borderRadius(9)
-            .animation({ duration: 180, curve: Curve.EaseOut })
-            .onClick(() => {
-              this.draftMode = 'fixed';
-            })
-        }
-        .width('100%')
-      }
-      .width('100%')
-      .padding(3)
-      .backgroundColor('#EBDFC6')
-      .borderRadius(12)
-
-      Stack({ alignContent: Alignment.TopStart }) {
-        Row() {
-          ForEach(this.curveLabels(), (label: string, index: number) => {
-            Column() {
-              Circle({ width: 8, height: 8 })
-                .fill(index === 0 ? Tokens.orange : Tokens.surface)
-                .stroke(index === 0 ? Tokens.orange : '#80FF9C2C')
-                .strokeWidth(1.5)
-              Text(label)
-                .fontSize(7.5)
-                .fontColor(index === 0 ? '#B16A0A' : Tokens.mutedSoft)
-                .margin({ top: 5 })
-            }
-            .layoutWeight(1)
-            .opacity(this.dotVisible > index ? 1 : 0)
-            .translate({ y: this.dotVisible > index ? 0 : 10 })
-            .scale({ x: this.dotVisible > index ? 1 : 0.5, y: this.dotVisible > index ? 1 : 0.5 })
-            .animation({ duration: 220, curve: Curve.EaseOut })
-          })
-        }
-        .width('100%')
-        .margin({ top: 12 })
-        .opacity(this.draftMode === 'curve' ? 1 : 0)
-        .scale({ x: this.draftMode === 'curve' ? 1 : 0.96, y: this.draftMode === 'curve' ? 1 : 0.96 })
-        .translate({ y: this.draftMode === 'curve' ? 0 : -4 })
-        .enabled(this.draftMode === 'curve')
-        .animation({ duration: 220, curve: Curve.EaseOut })
-
-        Row() {
-          Text(this.t('every'))
-            .fontSize(11)
-            .fontColor(Tokens.muted)
-          Stack({ alignContent: Alignment.Center }) {
-            Text('−')
-              .fontSize(16)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#6C4B00')
-          }
-          .width(26)
-          .height(26)
-          .backgroundColor('#FBF4E5')
-          .borderWidth(1)
-          .borderColor('#DCC49A')
-          .borderRadius(13)
-          .margin({ left: 10, right: 8 })
-          .onClick(() => {
-            this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
-          })
-          TextInput({ text: this.draftFixedDays + '' })
-            .width(52)
-            .height(30)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Tokens.ink)
-            .textAlign(TextAlign.Center)
-            .maxLength(2)
-            .backgroundColor(Tokens.surface)
-            .borderRadius(8)
-            .onChange((value: string) => {
-              const days = Number(value);
-              if (!isNaN(days) && days >= 1) {
-                this.draftFixedDays = Math.min(90, Math.round(days));
-              }
-            })
-          Text(this.t('dayUnit'))
-            .fontSize(11)
-            .fontColor(Tokens.muted)
-            .margin({ left: 4 })
-          Stack({ alignContent: Alignment.Center }) {
-            Text('+')
-              .fontSize(16)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#6C4B00')
-          }
-          .width(26)
-          .height(26)
-          .backgroundColor('#FBF4E5')
-          .borderWidth(1)
-          .borderColor('#DCC49A')
-          .borderRadius(13)
-          .margin({ left: 8 })
-          .onClick(() => {
-            this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
-          })
-        }
-        .width('100%')
-        .margin({ top: 10 })
-        .opacity(this.draftMode === 'fixed' ? 1 : 0)
-        .scale({ x: this.draftMode === 'fixed' ? 1 : 0.96, y: this.draftMode === 'fixed' ? 1 : 0.96 })
-        .translate({ y: this.draftMode === 'fixed' ? 0 : 4 })
-        .enabled(this.draftMode === 'fixed')
-        .animation({ duration: 220, curve: Curve.EaseOut })
-      }
-      .width('100%')
-      .height(this.draftMode === 'fixed' ? 52 : 40)
-      .clip(true)
-      .animation({ duration: 280, curve: Curve.EaseInOut })
 
       Row() {
         Column() {
@@ -2220,7 +2081,11 @@ struct Index {
       Column() {
         if (this.isWide) {
           Row({ space: 48 }) {
-            this.ReviewCard()
+            if (this.reviewStage === 'rating') {
+              this.RatingCard()
+            } else {
+              this.EntryCard()
+            }
             this.CurvePanel()
           }
           .layoutWeight(1)
@@ -2228,7 +2093,11 @@ struct Index {
           .alignItems(VerticalAlign.Center)
         } else {
           Column({ space: 16 }) {
-            this.ReviewCard()
+            if (this.reviewStage === 'rating') {
+              this.RatingCard()
+            } else {
+              this.EntryCard()
+            }
             this.CurvePanel()
           }
           .width('100%')
@@ -2251,7 +2120,7 @@ struct Index {
     .scale({ x: this.reviewScale, y: this.reviewScale })
   }
 
-  @Builder ReviewCard() {
+  @Builder EntryCard() {
     Column() {
       Row() {
         Text(this.findSubject(this.reviewItem.subjectId).name)
@@ -2263,9 +2132,6 @@ struct Index {
           .fontColor(Tokens.mutedSoft)
           .margin({ left: 8 })
         Blank()
-        Text((this.reviewItem.reviewCount + 1) + ' / 06')
-          .fontSize(9)
-          .fontColor(Tokens.mutedSoft)
         Button(this.t('close'))
           .height(26)
           .fontSize(9)
@@ -2273,9 +2139,8 @@ struct Index {
           .backgroundColor(Tokens.yellowSoft)
           .borderRadius(13)
           .padding({ left: 10, right: 10 })
-          .margin({ left: 10 })
           .onClick(() => {
-            this.showReview = false;
+            this.closeReview();
           })
       }
       .width('100%')
@@ -2299,20 +2164,30 @@ struct Index {
         .backgroundColor(Tokens.line)
         .margin({ top: 22, bottom: 18 })
 
-      Text(this.t('howRemember'))
-        .width('100%')
-        .fontSize(11)
-        .fontColor(Tokens.muted)
-      Text(this.t('autoNext'))
-        .width('100%')
-        .fontSize(8)
-        .fontColor(Tokens.mutedSoft)
-        .margin({ top: 4, bottom: 12 })
-
-      Row({ space: 8 }) {
-        this.RateButton(this.t('forgot'), this.intervalHint('forgot'), 'forgot', '#D95F3F')
-        this.RateButton(this.t('fuzzy'), this.intervalHint('fuzzy'), 'fuzzy', '#B17A12')
-        this.RateButton(this.t('got'), this.intervalHint('got'), 'got', '#8F5600')
+      Row({ space: 10 }) {
+        Button(this.t('postponeTomorrow'))
+          .layoutWeight(1)
+          .height(48)
+          .fontSize(12)
+          .fontColor(Tokens.inkSoft)
+          .backgroundColor(Tokens.surfaceSoft)
+          .borderWidth(1)
+          .borderColor(Tokens.line)
+          .borderRadius(14)
+          .onClick(() => {
+            this.postponeReview();
+          })
+        Button(this.t('completeReview'))
+          .layoutWeight(1)
+          .height(48)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor('#3D2A00')
+          .backgroundColor(Tokens.yellow)
+          .borderRadius(14)
+          .onClick(() => {
+            this.startRating();
+          })
       }
       .width('100%')
     }
@@ -2325,28 +2200,86 @@ struct Index {
     .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
   }
 
-  @Builder RateButton(label: string, hint: string, rating: string, color: string) {
+  @Builder RatingCard() {
     Column() {
-      Text(label)
-        .fontSize(12)
+      Row() {
+        Button('←')
+          .width(30)
+          .height(30)
+          .fontSize(14)
+          .fontColor('#6C4B00')
+          .backgroundColor(Tokens.yellowSoft)
+          .borderRadius(15)
+          .padding({ left: 0, right: 0 })
+          .onClick(() => {
+            this.reviewStage = 'entry';
+          })
+        Text(this.findSubject(this.reviewItem.subjectId).name)
+          .fontSize(10)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.muted)
+          .margin({ left: 10 })
+        Text(this.t('reviewN', this.reviewItem.reviewCount + 1))
+          .fontSize(9)
+          .fontColor(Tokens.mutedSoft)
+          .margin({ left: 8 })
+        Blank()
+        Button(this.t('close'))
+          .height(26)
+          .fontSize(9)
+          .fontColor('#6C4B00')
+          .backgroundColor(Tokens.yellowSoft)
+          .borderRadius(13)
+          .padding({ left: 10, right: 10 })
+          .onClick(() => {
+            this.closeReview();
+          })
+      }
+      .width('100%')
+
+      Text(this.reviewItem.title)
+        .width('100%')
+        .fontSize(this.isWide ? 38 : 30)
         .fontWeight(FontWeight.Bold)
-        .fontColor(color)
-      Text(hint)
-        .fontSize(8)
+        .fontColor(Tokens.ink)
+        .letterSpacing(-1)
+        .margin({ top: 14 })
+      Text(this.t('lastReview', formatShort(this.reviewItem.lastReviewedAt > 0 ? this.reviewItem.lastReviewedAt : this.reviewItem.createdAt)))
+        .width('100%')
+        .fontSize(10.5)
+        .fontColor(Tokens.muted)
+        .margin({ top: 8 })
+
+      Row()
+        .width('100%')
+        .height(1)
+        .backgroundColor(Tokens.line)
+        .margin({ top: 22, bottom: 18 })
+
+      Text(this.t('rateTitle'))
+        .width('100%')
+        .fontSize(this.isWide ? 24 : 20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Tokens.ink)
+      Text(this.t('retentionTitle') + ' ' + Math.round(this.settings.targetRetention * 100) + '%')
+        .width('100%')
+        .fontSize(11)
+        .fontColor(Tokens.muted)
+        .margin({ top: 8 })
+      Text(this.t('retentionHint'))
+        .width('100%')
+        .fontSize(10)
         .fontColor(Tokens.mutedSoft)
-        .margin({ top: 3 })
+        .lineHeight(16)
+        .margin({ top: 4 })
     }
-    .layoutWeight(1)
-    .height(58)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.pressedRating === rating ? Tokens.yellow : '#FFF7DF')
+    .width(this.isWide ? 680 : '100%')
+    .padding(this.isWide ? 32 : 22)
+    .backgroundColor(Tokens.surface)
+    .borderRadius(28)
     .borderWidth(1)
-    .borderColor('#F0D9A8')
-    .borderRadius(13)
-    .scale({ x: this.pressedRating === rating ? 0.96 : 1, y: this.pressedRating === rating ? 0.96 : 1 })
-    .onClick(() => {
-      this.finishReview(rating);
-    })
+    .borderColor('#CCFFFFFF')
+    .shadow({ radius: 40, color: '#24000000', offsetX: 0, offsetY: 20 })
   }
 
   @Builder CurvePanel() {
