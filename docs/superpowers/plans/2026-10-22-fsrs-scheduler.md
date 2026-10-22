@@ -105,7 +105,9 @@ describe('FSRS initial state', () => {
     expect(hard.stability).toBeGreaterThan(again.stability);
     expect(good.stability).toBeGreaterThan(hard.stability);
     expect(easy.stability).toBeGreaterThan(good.stability);
-    expect(good.difficulty).toBeCloseTo(6.4133, 3);
+    expect(hard.difficulty).toBeCloseTo(5.1122, 3);
+    expect(good.difficulty).toBeCloseTo(2.1181, 3);
+    expect(easy.difficulty).toBe(1);
   });
 
   it('previews four positive intervals and keeps the retention ordering', () => {
@@ -126,6 +128,14 @@ describe('FSRS review transitions', () => {
     const next = review(state, 1, 3, 0.90, 2000);
     expect(next.state).toBe('relearning');
     expect(next.lapses).toBe(1);
+  });
+
+  it('uses the FSRS-6 new-card branch for the first rating', () => {
+    const fresh: FsrsState = { stability: 0, difficulty: 5, state: 'new', lapses: 0, scheduledDays: 0, lastReviewedAt: 0 };
+    const first = review(fresh, 3, 0, 0.90, 1000);
+    expect(first.state).toBe('review');
+    expect(first.stability).toBeCloseTo(2.3065, 3);
+    expect(first.scheduledDays).toBeGreaterThanOrEqual(1);
   });
 
   it('does not decrease stability after a successful review', () => {
@@ -210,7 +220,7 @@ export function initialState(grade: number, now: number): FsrsState {
   const g = clampGrade(grade);
   return {
     stability: W[g - 1],
-    difficulty: clamp(W[4] - (g - 3) * W[5], 1, 10),
+    difficulty: clamp(W[4] - Math.exp(W[5] * (g - 1)) + 1, 1, 10),
     state: g === 1 ? 'learning' : 'review',
     lapses: 0,
     scheduledDays: 0,
@@ -219,7 +229,8 @@ export function initialState(grade: number, now: number): FsrsState {
 }
 
 function nextDifficulty(difficulty: number, grade: number): number {
-  const next = W[7] * W[4] + (1 - W[7]) * (difficulty - W[6] * (grade - 3));
+  const initialEasy = clamp(W[4] - Math.exp(W[5] * 3) + 1, 1, 10);
+  const next = W[7] * initialEasy + (1 - W[7]) * (difficulty - W[6] * (grade - 3));
   return clamp(next, 1, 10);
 }
 
@@ -254,7 +265,14 @@ export function review(
   const base = state.state === 'new' ? initialState(g, now) : clampState(state);
   if (state.state === 'new') {
     const interval = intervalFor(base.stability, safeRetention);
-    return { ...base, scheduledDays: interval, lastReviewedAt: now };
+    return {
+      stability: base.stability,
+      difficulty: base.difficulty,
+      state: base.state,
+      lapses: base.lapses,
+      scheduledDays: interval,
+      lastReviewedAt: now
+    };
   }
   const stability = clamp(nextStability(base, g, elapsedDays), 0.1, 36500);
   const difficulty = nextDifficulty(base.difficulty, g);
