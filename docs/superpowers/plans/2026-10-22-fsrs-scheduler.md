@@ -387,7 +387,7 @@ export function nextDueAt(now: number, days: number): number {
 }
 ~~~
 
-Keep Scheduling.ets as the ArkTS-facing adapter that imports these helpers and calls Fsrs.review.
+Keep Scheduling.ets as the ArkTS-facing adapter that imports these helpers. Task 2 only adds a compile gate; Task 5 adds the real FSRS review wiring.
 
 - [ ] **Step 4: Run tests**
 
