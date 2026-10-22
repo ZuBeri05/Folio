@@ -1,4 +1,5 @@
 import { StudyItem, ReviewResult } from './Models';
+import { nextDueAt } from './fsrs/Scheduling.ts';
 
 export const DAY_MS: number = 86400000;
 export const CURVE: number[] = [1, 2, 4, 7, 15, 30, 60];
@@ -60,7 +61,7 @@ export function scheduleNext(item: StudyItem, rating: string, now: Date, curveDa
   }
 
   return {
-    nextAt: addDays(startOfDay(now), nextInterval).getTime(),
+    nextAt: nextDueAt(now.getTime(), nextInterval),
     nextIntervalDays: nextInterval,
     curveStage: nextStage,
     rating: rating
