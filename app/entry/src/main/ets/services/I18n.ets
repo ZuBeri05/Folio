@@ -225,7 +225,10 @@ export class I18n {
       "reviewMode", "复习方式",
       "fsrsMode", "FSRS",
       "fixedMode", "固定间隔",
-      "fixedDaysHint", "每隔 {0} 天复习"
+      "fixedDaysHint", "每隔 {0} 天复习",
+    "retentionAdjust", "调整",
+    "retentionDone", "完成",
+    "curveForecastHint", "按当前记忆保持率与连续「良好」估算的预计天数"
   ]);
 
   private static readonly en: Map<string, string> = I18n.make([
@@ -431,7 +434,10 @@ export class I18n {
       "reviewMode", "Review mode",
       "fsrsMode", "FSRS",
       "fixedMode", "Fixed interval",
-      "fixedDaysHint", "Review every {0} days"
+      "fixedDaysHint", "Review every {0} days",
+    "retentionAdjust", "Adjust",
+    "retentionDone", "Done",
+    "curveForecastHint", "Estimated days from your retention target and repeated Good ratings"
   ]);
 
   private static readonly ja: Map<string, string> = I18n.make([
@@ -600,7 +606,10 @@ export class I18n {
     "cancelConfirm",
     "キャンセル",
     "retentionExplain",
-    "少し上げると復習が増えて覚えやすく、下げると復習が減って忘れやすくなります。90% がおすすめです。"
+    "少し上げると復習が増えて覚えやすく、下げると復習が減って忘れやすくなります。90% がおすすめです。",
+    "retentionAdjust", "調整",
+    "retentionDone", "完了",
+    "curveForecastHint", "現在の保持率と「良好」が続くと仮定した予想日数"
   ]);
 
   private static readonly ko: Map<string, string> = I18n.make([
@@ -769,7 +778,10 @@ export class I18n {
     "cancelConfirm",
     "취소",
     "retentionExplain",
-    "조금 높이면 복습이 잦아져 더 잘 기억하고, 낮추면 복습이 줄어 더 쉽게 잊게 됩니다. 90%가 좋습니다."
+    "조금 높이면 복습이 잦아져 더 잘 기억하고, 낮추면 복습이 줄어 더 쉽게 잊게 됩니다. 90%가 좋습니다.",
+    "retentionAdjust", "조정",
+    "retentionDone", "완료",
+    "curveForecastHint", "현재 유지율과 연속 ‘좋음’을 기준으로 한 예상 일수"
   ]);
 
   private static readonly fr: Map<string, string> = I18n.make([
@@ -938,7 +950,10 @@ export class I18n {
     "cancelConfirm",
     "Annuler",
     "retentionExplain",
-    "Un peu plus haut : plus de révisions, des souvenirs plus solides. Un peu plus bas : moins de révisions, plus d'oubli. 90 % convient à la plupart des gens."
+    "Un peu plus haut : plus de révisions, des souvenirs plus solides. Un peu plus bas : moins de révisions, plus d'oubli. 90 % convient à la plupart des gens.",
+    "retentionAdjust", "Ajuster",
+    "retentionDone", "Terminé",
+    "curveForecastHint", "Jours estimés selon la rétention cible et des « Bien » répétés"
   ]);
 
   private static readonly es: Map<string, string> = I18n.make([
@@ -1107,7 +1122,10 @@ export class I18n {
     "cancelConfirm",
     "Cancelar",
     "retentionExplain",
-    "Un poco más arriba: más repasos y recuerdos más firmes. Un poco más abajo: menos repasos y más olvido. El 90 % le va bien a la mayoría."
+    "Un poco más arriba: más repasos y recuerdos más firmes. Un poco más abajo: menos repasos y más olvido. El 90 % le va bien a la mayoría.",
+    "retentionAdjust", "Ajustar",
+    "retentionDone", "Listo",
+    "curveForecastHint", "Días estimados según la retención objetivo y «Bien» repetidos"
   ]);
 
   static t(lang: string, key: string, a?: string | number, b?: string | number): string {

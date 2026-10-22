@@ -11,7 +11,16 @@ export const SUBJECT_COLORS: string[] = [
   '#8E7CC3',
   '#5AA469',
   '#E07A5F',
-  '#7A8B99'
+  '#7A8B99',
+  '#3FA7A3',
+  '#C77DBB',
+  '#6C7BD9',
+  '#D4A72C',
+  '#7FA650',
+  '#C46A8A',
+  '#5B8CBF',
+  '#9A7B4F',
+  '#8C9A5B'
 ];
 
 export interface StudyItem {

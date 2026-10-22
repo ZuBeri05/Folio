@@ -39,6 +39,7 @@ struct Index {
   @State reviewScale: number = 0.97;
   @State reviewOpacity: number = 0;
   @State todayProgress: number = 1;
+  @State retentionUnlocked: boolean = false;
   @State isTablet: boolean = false;
   @State listOpacity: number = 0;
   @State listShift: number = 16;
@@ -287,8 +288,8 @@ struct Index {
     }
     const forward = next > this.tab;
     const isCalendar = next === 2;
-    const outMs = isCalendar ? 130 : 210;
-    const inMs = isCalendar ? 240 : 380;
+    const outMs = isCalendar ? 180 : 240;
+    const inMs = isCalendar ? 340 : 460;
     animateTo({ duration: outMs, curve: Curve.EaseIn }, () => {
       this.pageOpacity = 0;
       this.pageShift = 0;
@@ -297,7 +298,7 @@ struct Index {
       this.tab = next;
       this.syncSystemBars();
       this.pageOpacity = 0;
-      this.pageShift = isCalendar ? 0 : (forward ? 26 : -26);
+      this.pageShift = isCalendar ? 18 : (forward ? 32 : -32);
       animateTo({ duration: inMs, curve: Curve.EaseOut }, () => {
         this.pageOpacity = 1;
         this.pageShift = 0;
@@ -650,6 +651,9 @@ struct Index {
   }
 
   private updateRetention(value: number): void {
+    if (!this.retentionUnlocked) {
+      return;
+    }
     const retention = Math.min(0.95, Math.max(0.80, Math.round(value) / 100));
     this.settings = {
       reminderEnabled: this.settings.reminderEnabled,
@@ -678,6 +682,7 @@ struct Index {
     };
     this.persist();
     this.syncReminder();
+    this.retentionUnlocked = false;
     this.toast(this.t('toastSettingsSaved'));
   }
 
@@ -771,10 +776,34 @@ struct Index {
     return accents[safe];
   }
 
+  private themeButton(): string {
+    return this.settings.themeIndex === 0 ? Tokens.yellow : this.themeAccent(this.settings.themeIndex);
+  }
+
+  private themeInk(): string {
+    return this.subjectInk(this.themeButton());
+  }
+
   private pageBg(): string {
     const colors = this.pageColors(this.settings.themeIndex);
     const index = this.tab >= 0 && this.tab < colors.length ? this.tab : 0;
     return colors[index];
+  }
+
+  private nextSubjectColor(): string {
+    for (let c = 0; c < SUBJECT_COLORS.length; c++) {
+      let used = false;
+      for (let i = 0; i < this.subjects.length; i++) {
+        if (this.subjects[i].color === SUBJECT_COLORS[c]) {
+          used = true;
+          break;
+        }
+      }
+      if (!used) {
+        return SUBJECT_COLORS[c];
+      }
+    }
+    return SUBJECT_COLORS[this.subjects.length % SUBJECT_COLORS.length];
   }
 
   private addSubject(): void {
@@ -792,11 +821,12 @@ struct Index {
     const subject: Subject = {
       id: newId(),
       name: name,
-      color: SUBJECT_COLORS[this.subjects.length % SUBJECT_COLORS.length]
+      color: this.nextSubjectColor()
     };
     this.subjects = [...this.subjects, subject];
     this.draftSubjectId = subject.id;
     this.newSubjectName = '';
+    this.getUIContext().getFocusController().clearFocus();
     this.persist();
     this.toast(this.t('toastSubjectAdded', name));
   }
@@ -1042,48 +1072,48 @@ struct Index {
         shown[i] = 1;
         this.calendarAlpha = shown;
         const start = this.calendarX.slice();
-        start[i] = 64;
+        start[i] = 96;
         this.calendarX = start;
         setTimeout(() => {
-          animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+          animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
             const hit = this.calendarX.slice();
             hit[i] = 0;
             this.calendarX = hit;
           });
           setTimeout(() => {
-            animateTo({ duration: 100, curve: Curve.EaseOut }, () => {
+            animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
               const rebound = this.calendarX.slice();
-              rebound[i] = 4;
+              rebound[i] = 8;
               this.calendarX = rebound;
             });
             setTimeout(() => {
-              animateTo({ duration: 120, curve: Curve.EaseOut }, () => {
+              animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
                 const settle = this.calendarX.slice();
                 settle[i] = 0;
                 this.calendarX = settle;
               });
-            }, 100);
-          }, 300);
+            }, 140);
+          }, 420);
         }, 20);
-      }, i * 70);
+      }, i * 90);
     }
   }
 
   private playCalendar(): void {
     this.calendarProgress = 0;
-    animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 460, curve: Curve.EaseOut }, () => {
       this.calendarProgress = 1;
     });
     setTimeout(() => {
-      animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
-        this.calendarProgress = 0.9;
+      animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
+        this.calendarProgress = 0.82;
       });
-    }, 300);
+    }, 460);
     setTimeout(() => {
-      animateTo({ duration: 140, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 180, curve: Curve.EaseOut }, () => {
         this.calendarProgress = 1;
       });
-    }, 440);
+    }, 640);
   }
 
   build() {
@@ -1212,8 +1242,8 @@ struct Index {
           .height(34)
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#3D2A00')
-          .backgroundColor(Tokens.yellow)
+          .fontColor(this.themeInk())
+          .backgroundColor(this.themeButton())
           .borderRadius(17)
           .padding({ left: 14, right: 14 })
           .onClick(() => {
@@ -1319,8 +1349,8 @@ struct Index {
       Button(this.t('newEntry'))
         .height(38)
         .fontSize(12)
-        .fontColor('#3D2A00')
-        .backgroundColor(Tokens.yellow)
+        .fontColor(this.themeInk())
+        .backgroundColor(this.themeButton())
         .borderRadius(19)
         .padding({ left: 18, right: 18 })
         .margin({ top: 18 })
@@ -1575,10 +1605,10 @@ struct Index {
           Button(this.t('fsrsMode'))
             .height(28)
             .fontSize(9.5)
-            .fontColor(this.draftMode === 'fsrs' ? '#3D2A00' : Tokens.inkSoft)
-            .backgroundColor(this.draftMode === 'fsrs' ? Tokens.yellow : Tokens.surface)
+            .fontColor(this.draftMode === 'fsrs' ? this.themeInk() : Tokens.inkSoft)
+            .backgroundColor(this.draftMode === 'fsrs' ? this.themeButton() : Tokens.surface)
             .borderWidth(1)
-            .borderColor(this.draftMode === 'fsrs' ? '#CCFFC531' : Tokens.line)
+            .borderColor(this.draftMode === 'fsrs' ? this.themeButton() : Tokens.line)
             .borderRadius(14)
             .padding({ left: 12, right: 12 })
             .onClick(() => {
@@ -1588,10 +1618,10 @@ struct Index {
           Button(this.t('fixedMode'))
             .height(28)
             .fontSize(9.5)
-            .fontColor(this.draftMode === 'fixed' ? '#3D2A00' : Tokens.inkSoft)
-            .backgroundColor(this.draftMode === 'fixed' ? Tokens.yellow : Tokens.surface)
+            .fontColor(this.draftMode === 'fixed' ? this.themeInk() : Tokens.inkSoft)
+            .backgroundColor(this.draftMode === 'fixed' ? this.themeButton() : Tokens.surface)
             .borderWidth(1)
-            .borderColor(this.draftMode === 'fixed' ? '#CCFFC531' : Tokens.line)
+            .borderColor(this.draftMode === 'fixed' ? this.themeButton() : Tokens.line)
             .borderRadius(14)
             .padding({ left: 12, right: 12 })
             .margin({ left: 6 })
@@ -1680,6 +1710,15 @@ struct Index {
           .clip(true)
           .animation({ duration: 280, curve: Curve.EaseInOut })
 
+        if (this.draftMode === 'fsrs') {
+          Text(this.t('curveForecastHint'))
+            .width('100%')
+            .fontSize(8.5)
+            .fontColor(Tokens.muted)
+            .textAlign(TextAlign.Center)
+            .margin({ top: 3 })
+        }
+
         Row() {
         Column() {
           Text(this.t('remindMe'))
@@ -1694,7 +1733,7 @@ struct Index {
         .alignItems(HorizontalAlign.Start)
         Blank()
         Toggle({ type: ToggleType.Switch, isOn: this.settings.reminderEnabled })
-          .selectedColor(Tokens.yellow)
+          .selectedColor(this.themeButton())
           .onChange((value: boolean) => {
             this.updateReminderEnabled(value);
           })
@@ -1712,8 +1751,8 @@ struct Index {
         .height(50)
         .fontSize(13)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#3D2A00')
-        .backgroundColor(Tokens.yellow)
+        .fontColor(this.themeInk())
+        .backgroundColor(this.themeButton())
         .borderRadius(15)
         .margin({ top: 14 })
         .onClick(() => {
@@ -1955,7 +1994,7 @@ struct Index {
           .alignItems(HorizontalAlign.Start)
           Blank()
           Toggle({ type: ToggleType.Switch, isOn: this.settings.reminderEnabled })
-            .selectedColor(Tokens.yellow)
+            .selectedColor(this.themeButton())
             .onChange((value: boolean) => {
               this.updateReminderEnabled(value);
             })
@@ -2014,7 +2053,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 14 })
+      .translate({ y: (1 - this.calendarProgress) * 24 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
@@ -2035,17 +2074,30 @@ struct Index {
           Text(Math.round(this.settings.targetRetention * 100) + '%')
             .fontSize(24)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#B16A0A')
+            .fontColor(this.themeAccent(this.settings.themeIndex))
             .margin({ left: 12 })
+          Button(this.retentionUnlocked ? this.t('retentionDone') : this.t('retentionAdjust'))
+            .height(26)
+            .fontSize(9)
+            .fontColor(this.themeInk())
+            .backgroundColor(this.themeButton())
+            .borderRadius(13)
+            .padding({ left: 10, right: 10 })
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.retentionUnlocked = !this.retentionUnlocked;
+            })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
         Slider({ value: Math.round(this.settings.targetRetention * 100), min: 80, max: 95, step: 1, style: SliderStyle.OutSet })
           .width('100%')
-          .selectedColor(Tokens.yellow)
-          .blockColor(Tokens.yellow)
+          .selectedColor(this.themeButton())
+          .blockColor(this.themeButton())
           .trackColor('#E6DCC8')
+          .enabled(this.retentionUnlocked)
+          .opacity(this.retentionUnlocked ? 1 : 0.35)
           .margin({ top: 12 })
           .onChange((value: number, mode: SliderChangeMode) => {
             this.updateRetention(value);
@@ -2074,8 +2126,8 @@ struct Index {
           .height(42)
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#3D2A00')
-          .backgroundColor(Tokens.yellow)
+          .fontColor(this.themeInk())
+          .backgroundColor(this.themeButton())
           .borderRadius(13)
           .margin({ top: 12 })
           .onClick(() => {
@@ -2089,7 +2141,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 16 })
+      .translate({ y: (1 - this.calendarProgress) * 28 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
@@ -2145,8 +2197,8 @@ struct Index {
             .height(36)
             .fontSize(11)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#3D2A00')
-            .backgroundColor(Tokens.yellow)
+            .fontColor(this.themeInk())
+            .backgroundColor(this.themeButton())
             .borderRadius(10)
             .padding({ left: 16, right: 16 })
             .margin({ left: 8 })
@@ -2165,7 +2217,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 20 })
+      .translate({ y: (1 - this.calendarProgress) * 34 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
@@ -2199,7 +2251,7 @@ struct Index {
             .backgroundColor(Tokens.surface)
             .borderRadius(12)
             .borderWidth(this.settings.themeIndex === index ? 2 : 1)
-            .borderColor(this.settings.themeIndex === index ? '#E8A21A' : '#E6DCC8')
+            .borderColor(this.settings.themeIndex === index ? this.themeAccent(index) : '#E6DCC8')
             .scale({ x: this.settings.themeIndex === index ? 1.02 : 1, y: this.settings.themeIndex === index ? 1.02 : 1 })
             .animation({ duration: 240, curve: Curve.EaseOut })
             .onClick(() => {
@@ -2217,7 +2269,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 14 })
+      .translate({ y: (1 - this.calendarProgress) * 24 })
       .opacity(Math.min(1, this.calendarProgress))
 
       Column() {
@@ -2231,10 +2283,10 @@ struct Index {
             Button(option.name)
               .height(30)
               .fontSize(10)
-              .fontColor(this.settings.language === option.code ? '#3D2A00' : Tokens.inkSoft)
-              .backgroundColor(this.settings.language === option.code ? Tokens.yellow : Tokens.surface)
+              .fontColor(this.settings.language === option.code ? this.themeInk() : Tokens.inkSoft)
+              .backgroundColor(this.settings.language === option.code ? this.themeButton() : Tokens.surface)
               .borderWidth(1)
-              .borderColor(this.settings.language === option.code ? '#CCFFC531' : '#E6DCC8')
+              .borderColor(this.settings.language === option.code ? this.themeButton() : '#E6DCC8')
               .borderRadius(15)
               .padding({ left: 12, right: 12 })
               .margin({ right: 6, bottom: 6 })
@@ -2254,7 +2306,7 @@ struct Index {
       .borderRadius(22)
       .borderWidth(1)
       .borderColor('#B3FFFFFF')
-      .translate({ y: (1 - this.calendarProgress) * 18 })
+      .translate({ y: (1 - this.calendarProgress) * 30 })
       .opacity(Math.min(1, this.calendarProgress))
 
 
@@ -2431,8 +2483,8 @@ struct Index {
           .height(48)
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#3D2A00')
-          .backgroundColor(Tokens.yellow)
+          .fontColor(this.themeInk())
+          .backgroundColor(this.themeButton())
           .borderRadius(14)
           .onClick(() => {
             this.startRating();
@@ -2635,8 +2687,8 @@ struct Index {
           .height(46)
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#3D2A00')
-          .backgroundColor(Tokens.yellow)
+          .fontColor(this.themeInk())
+          .backgroundColor(this.themeButton())
           .borderRadius(14)
           .onClick(() => {
             this.executeConfirm();
@@ -2764,8 +2816,8 @@ struct Index {
               .height(44)
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
-              .fontColor('#3D2A00')
-              .backgroundColor(Tokens.yellow)
+              .fontColor(this.themeInk())
+              .backgroundColor(this.themeButton())
               .borderRadius(13)
               .onClick(() => {
                 this.startEditItem();
@@ -2812,10 +2864,10 @@ struct Index {
               Button(subject.name)
                 .height(30)
                 .fontSize(10)
-                .fontColor(this.editSubjectId === subject.id ? '#3D2A00' : Tokens.inkSoft)
-                .backgroundColor(this.editSubjectId === subject.id ? Tokens.yellow : Tokens.surface)
+                .fontColor(this.editSubjectId === subject.id ? this.themeInk() : Tokens.inkSoft)
+                .backgroundColor(this.editSubjectId === subject.id ? this.themeButton() : Tokens.surface)
                 .borderWidth(1)
-                .borderColor(this.editSubjectId === subject.id ? '#CCFFC531' : Tokens.line)
+                .borderColor(this.editSubjectId === subject.id ? this.themeButton() : Tokens.line)
                 .borderRadius(15)
                 .padding({ left: 11, right: 11 })
                 .margin({ right: 6, bottom: 6 })
@@ -2845,8 +2897,8 @@ struct Index {
               .height(42)
               .fontSize(12)
               .fontWeight(FontWeight.Medium)
-              .fontColor('#3D2A00')
-              .backgroundColor(Tokens.yellow)
+              .fontColor(this.themeInk())
+              .backgroundColor(this.themeButton())
               .borderRadius(12)
               .onClick(() => {
                 this.saveItemEdit();
