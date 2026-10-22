@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import golden from './fixtures/fsrs6-golden.json';
 import type { FsrsState } from '../app/entry/src/main/ets/domain/fsrs/Fsrs.ts';
 import {
   initialState,
@@ -64,6 +65,23 @@ describe('FSRS review transitions', () => {
     // The mandated D0(4)=1.0 mean reversion yields 497, not the stale 496
     // reference (496 only occurs when difficulty is not mean-reverted).
     expect(intervals).toEqual([2, 11, 46, 163, 497]);
+  });
+
+  it('reproduces the named ts-fsrs reference sequence within one day', () => {
+    let state: FsrsState = initialState(3, 0);
+    const intervals: number[] = [];
+    let elapsedDays = 0;
+    let now = 0;
+    for (let i = 0; i < golden.intervals.length; i++) {
+      state = review(state, 3, elapsedDays, golden.retention, now);
+      intervals.push(state.scheduledDays);
+      elapsedDays = state.scheduledDays;
+      now += state.scheduledDays;
+    }
+    expect(intervals).toHaveLength(golden.intervals.length);
+    intervals.forEach((interval, index) => {
+      expect(Math.abs(interval - golden.intervals[index])).toBeLessThanOrEqual(1);
+    });
   });
 
   it('does not decrease stability after a successful review', () => {
