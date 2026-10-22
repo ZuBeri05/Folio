@@ -37,6 +37,8 @@ struct Index {
   @State titleBorderColor: string = '#B3FFFFFF';
   @State todayLabel: string = '';
   @State reviewScale: number = 0.97;
+  @State reviewOpacity: number = 0;
+  @State todayProgress: number = 1;
   @State isTablet: boolean = false;
   @State listOpacity: number = 0;
   @State listShift: number = 16;
@@ -70,6 +72,7 @@ struct Index {
   private reviewBusy: boolean = false;
   private reviewPressTimer: number = -1;
   private reviewCommitTimer: number = -1;
+  private reviewCloseTimer: number = -1;
   private reviewToken: number = 0;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
@@ -120,6 +123,7 @@ struct Index {
       this.draftSubjectId = this.subjects[0].id;
     }
     this.playEntry();
+    this.playToday();
     this.playForm();
     this.playDots();
     this.refreshNotificationState();
@@ -130,13 +134,20 @@ struct Index {
 
   private playEntry(): void {
     this.listOpacity = 0;
-    this.listShift = 24;
+    this.listShift = 34;
     setTimeout(() => {
-      animateTo({ duration: 480, curve: Curve.EaseOut }, () => {
+      animateTo({ duration: 620, curve: Curve.EaseOut }, () => {
         this.listOpacity = 1;
         this.listShift = 0;
       });
     }, 40);
+  }
+
+  private playToday(): void {
+    this.todayProgress = 0;
+    animateTo({ duration: 460, curve: Curve.EaseOut }, () => {
+      this.todayProgress = 1;
+    });
   }
 
   private refreshNotificationState(): void {
@@ -157,11 +168,11 @@ struct Index {
     this.showComposer = true;
     this.playForm();
     this.playDots();
-    this.composerScale = 0.92;
-    this.composerShift = 24;
+    this.composerScale = 0.88;
+    this.composerShift = 32;
     this.composerOpacity = 0;
     this.composerDim = 0;
-    animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 520, curve: Curve.EaseOut }, () => {
       this.composerScale = 1;
       this.composerShift = 0;
       this.composerOpacity = 1;
@@ -170,9 +181,9 @@ struct Index {
   }
 
   private closeComposer(): void {
-    animateTo({ duration: 220, curve: Curve.EaseIn }, () => {
-      this.composerScale = 0.96;
-      this.composerShift = 10;
+    animateTo({ duration: 280, curve: Curve.EaseIn }, () => {
+      this.composerScale = 0.94;
+      this.composerShift = 16;
       this.composerOpacity = 0;
       this.composerDim = 0;
     });
@@ -227,6 +238,17 @@ struct Index {
     return { id: '', name: '其他', color: Tokens.muted };
   }
 
+  private subjectInk(color: string): string {
+    const raw = color.startsWith('#') ? color.substring(1) : color;
+    if (raw.length < 6) {
+      return '#FFFFFF';
+    }
+    const r = parseInt(raw.substring(0, 2), 16);
+    const g = parseInt(raw.substring(2, 4), 16);
+    const b = parseInt(raw.substring(4, 6), 16);
+    return (r * 299 + g * 587 + b * 114) / 1000 >= 160 ? '#3D2A00' : '#FFFFFF';
+  }
+
   private dueItems(): StudyItem[] {
     const today = startOfDay(new Date()).getTime();
     const result: StudyItem[] = [];
@@ -264,7 +286,10 @@ struct Index {
       return;
     }
     const forward = next > this.tab;
-    animateTo({ duration: 130, curve: Curve.EaseIn }, () => {
+    const isCalendar = next === 2;
+    const outMs = isCalendar ? 130 : 210;
+    const inMs = isCalendar ? 240 : 380;
+    animateTo({ duration: outMs, curve: Curve.EaseIn }, () => {
       this.pageOpacity = 0;
       this.pageShift = 0;
     });
@@ -272,22 +297,24 @@ struct Index {
       this.tab = next;
       this.syncSystemBars();
       this.pageOpacity = 0;
-      this.pageShift = next === 2 ? 0 : 16;
-      animateTo({ duration: 240, curve: Curve.EaseOut }, () => {
+      this.pageShift = isCalendar ? 0 : (forward ? 26 : -26);
+      animateTo({ duration: inMs, curve: Curve.EaseOut }, () => {
         this.pageOpacity = 1;
         this.pageShift = 0;
       });
       if (next === 0) {
         this.playEntry();
+        this.playToday();
         this.playForm();
         this.playDots();
       }
       if (next === 2) {
         this.playCalendarRows();
-      } else {
+        this.playCalendar();
+      } else if (next !== 0) {
         this.playCalendar();
       }
-    }, 130);
+    }, outMs);
   }
 
   private itemSubtitle(item: StudyItem): string {
@@ -413,20 +440,41 @@ struct Index {
   private openReview(item: StudyItem): void {
     this.getUIContext().getFocusController().clearFocus();
     this.discardPendingReview();
+    if (this.reviewCloseTimer >= 0) {
+      clearTimeout(this.reviewCloseTimer);
+      this.reviewCloseTimer = -1;
+    }
     this.reviewItem = item;
     this.reviewStage = 'entry';
+    this.reviewOpacity = 0;
+    this.reviewScale = 0.90;
     this.showReview = true;
-    this.reviewScale = 0.94;
-    animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 420, curve: Curve.EaseOut }, () => {
+      this.reviewOpacity = 1;
       this.reviewScale = 1;
     });
   }
 
   private closeReview(): void {
+    if (!this.showReview) {
+      return;
+    }
     this.discardPendingReview();
-    this.showReview = false;
-    this.reviewStage = 'entry';
-    this.reviewScale = 1;
+    if (this.reviewCloseTimer >= 0) {
+      clearTimeout(this.reviewCloseTimer);
+      this.reviewCloseTimer = -1;
+    }
+    animateTo({ duration: 260, curve: Curve.EaseIn }, () => {
+      this.reviewOpacity = 0;
+      this.reviewScale = 0.94;
+    });
+    this.reviewCloseTimer = setTimeout(() => {
+      this.reviewCloseTimer = -1;
+      this.showReview = false;
+      this.reviewStage = 'entry';
+      this.reviewScale = 1;
+      this.reviewOpacity = 0;
+    }, 270);
   }
 
   private backToEntry(): void {
@@ -437,7 +485,7 @@ struct Index {
 
   private startRating(): void {
     this.reviewScale = 0.96;
-    animateTo({ duration: 220, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 300, curve: Curve.EaseOut }, () => {
       this.reviewStage = 'rating';
       this.reviewScale = 1;
     });
@@ -938,7 +986,7 @@ struct Index {
 
   private playForm(): void {
     this.formProgress = 0;
-    animateTo({ duration: 520, curve: Curve.EaseOut }, () => {
+    animateTo({ duration: 600, curve: Curve.EaseOut }, () => {
       this.formProgress = 1;
     });
   }
@@ -1219,8 +1267,8 @@ struct Index {
                 this.ReviewRow(item)
               }
               .width('100%')
-              .translate({ y: (1 - this.calendarProgress) * (18 + index * 4) })
-              .opacity(Math.min(1, this.calendarProgress))
+              .translate({ y: (1 - this.todayProgress) * (20 + index * 5) })
+              .opacity(Math.min(1, this.todayProgress))
             }, (item: StudyItem) => item.id)
           }
           if (this.dueItems().length === 0 && this.todayCreatedItems().length > 0 && !this.isWide) {
@@ -1337,8 +1385,11 @@ struct Index {
         .borderRadius(16)
         .borderWidth(1)
         .borderColor('#B3FFFFFF')
-        .translate({ y: (1 - this.calendarProgress) * (18 + index * 4) })
-        .opacity(Math.min(1, this.calendarProgress))
+        .translate({ y: (1 - this.todayProgress) * (20 + index * 5) })
+        .opacity(Math.min(1, this.todayProgress))
+        .transition(TransitionEffect.OPACITY
+          .combine(TransitionEffect.translate({ y: -10 }))
+          .animation({ duration: 280, curve: Curve.EaseOut }))
         .onClick(() => {
           this.openItemActions(item);
         })
@@ -1404,7 +1455,6 @@ struct Index {
     .borderWidth(1)
     .borderColor('#B3FFFFFF')
     .shadow({ radius: 24, color: Tokens.shadow, offsetX: 0, offsetY: 8 })
-    .backdropBlur(18)
     .scale({ x: this.pressedItemId === item.id ? 0.985 : 1, y: this.pressedItemId === item.id ? 0.985 : 1 })
     .onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down) {
@@ -1466,15 +1516,15 @@ struct Index {
           Button(subject.name)
             .height(31)
             .fontSize(11)
-            .fontColor(this.draftSubjectId === subject.id ? '#3D2A00' : Tokens.inkSoft)
-            .backgroundColor(this.draftSubjectId === subject.id ? Tokens.yellow : Tokens.surface)
+            .fontColor(this.draftSubjectId === subject.id ? this.subjectInk(subject.color) : Tokens.inkSoft)
+            .backgroundColor(this.draftSubjectId === subject.id ? subject.color : Tokens.surface)
             .borderWidth(1)
-            .borderColor(this.draftSubjectId === subject.id ? '#CCFFC531' : Tokens.line)
+            .borderColor(this.draftSubjectId === subject.id ? subject.color : Tokens.line)
             .borderRadius(16)
             .padding({ left: 12, right: 12 })
             .margin({ right: 6, bottom: 6 })
-            .scale({ x: this.draftSubjectId === subject.id ? 1.04 : 1, y: this.draftSubjectId === subject.id ? 1.04 : 1 })
-            .animation({ duration: 180, curve: Curve.EaseOut })
+            .scale({ x: this.draftSubjectId === subject.id ? 1.06 : 1, y: this.draftSubjectId === subject.id ? 1.06 : 1 })
+            .animation({ duration: 220, curve: Curve.EaseOut })
             .onClick(() => {
               this.draftSubjectId = subject.id;
             })
@@ -1708,10 +1758,6 @@ struct Index {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.ink)
         Blank()
-        Text(this.t('longPressManage'))
-          .fontSize(9)
-          .fontColor(Tokens.mutedSoft)
-          .margin({ right: 10 })
         Text(this.t('items', this.items.length))
           .fontSize(11)
           .fontColor(Tokens.muted)
@@ -2319,6 +2365,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .opacity(this.reviewOpacity)
     .scale({ x: this.reviewScale, y: this.reviewScale })
   }
 
