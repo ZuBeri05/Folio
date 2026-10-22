@@ -328,8 +328,9 @@ git commit -m "feat: add pure FSRS-6 core and tests"
 - Create: tests/scheduling.test.ts
 
 **Interfaces:**
-- Consumes: FsrsState, review(), preview()
-- Produces: scheduleFsrs(item, grade, now, retention): ReviewResult; postponeToTomorrow(item, now): StudyItem; previewGrades(item, now, retention): number[]
+- Consumes: FsrsState (only for a compile gate)
+- Produces: roundFsrsDays(raw), nextDueAt(now, days), and a compile-only fsrsCoreReady(now)
+- Task 5 produces scheduleFsrs, postponeToTomorrow, and previewForGrades; Task 2 does not wire scheduling yet.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -365,7 +366,7 @@ describe('FSRS day scheduling', () => {
 
 ~~~powershell
 cd jiesheng/tests
-npx vitest run tests/scheduling.test.ts
+npx vitest run scheduling.test.ts
 ~~~
 
 Expected: FAIL because Scheduling.ts does not exist.
@@ -393,7 +394,7 @@ Keep Scheduling.ets as the ArkTS-facing adapter that imports these helpers. Task
 
 ~~~powershell
 cd jiesheng/tests
-npx vitest run tests/scheduling.test.ts
+npx vitest run scheduling.test.ts
 ~~~
 
 Expected: PASS.
@@ -721,7 +722,7 @@ Implement postponeToTomorrow by copying item and setting nextReviewAt = nextDueA
 
 ~~~powershell
 cd jiesheng/tests
-npx vitest run tests/scheduling.test.ts
+npx vitest run scheduling.test.ts
 ~~~
 
 Expected: PASS.
