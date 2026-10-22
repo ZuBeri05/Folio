@@ -69,6 +69,9 @@ struct Index {
   @State curvePickValue: number = 1;
   @State curvePickScale: number = 1;
   private reviewBusy: boolean = false;
+  private reviewPressTimer: number = -1;
+  private reviewCommitTimer: number = -1;
+  private reviewToken: number = 0;
 
   private readonly navGlyphs: string[] = ['今', '记', '历', '设'];
   private readonly navLabels: string[] = ['今日', '记录', '日历', '设置'];
@@ -448,7 +451,31 @@ struct Index {
     return labels;
   }
 
+  private clearReviewTimers(): void {
+    if (this.reviewPressTimer >= 0) {
+      clearTimeout(this.reviewPressTimer);
+      this.reviewPressTimer = -1;
+    }
+    if (this.reviewCommitTimer >= 0) {
+      clearTimeout(this.reviewCommitTimer);
+      this.reviewCommitTimer = -1;
+    }
+  }
+
+  private discardPendingReview(): void {
+    this.clearReviewTimers();
+    this.reviewToken = this.reviewToken + 1;
+    this.reviewBusy = false;
+    this.pressedGrade = 0;
+  }
+
+  private isReviewCommitActive(itemId: string, token: number): boolean {
+    return this.showReview && this.reviewStage === 'rating'
+      && this.reviewItem.id === itemId && this.reviewToken === token;
+  }
+
   private openReview(item: StudyItem): void {
+    this.discardPendingReview();
     this.reviewItem = item;
     this.reviewStage = 'entry';
     this.showReview = true;
@@ -459,10 +486,16 @@ struct Index {
   }
 
   private closeReview(): void {
+    this.discardPendingReview();
     this.showReview = false;
     this.reviewStage = 'entry';
     this.reviewScale = 1;
-    this.pressedGrade = 0;
+  }
+
+  private backToEntry(): void {
+    this.discardPendingReview();
+    this.reviewStage = 'entry';
+    this.reviewScale = 1;
   }
 
   private startRating(): void {
@@ -470,6 +503,7 @@ struct Index {
   }
 
   private postponeReview(): void {
+    this.discardPendingReview();
     const next = postponeToTomorrow(this.reviewItem, Date.now());
     this.items = this.items.map((item: StudyItem) => item.id === next.id ? next : item);
     this.closeReview();
@@ -479,24 +513,35 @@ struct Index {
   }
 
   private finishReview(grade: number): void {
-    if (this.reviewBusy) {
+    if (this.reviewBusy || !this.showReview || this.reviewStage !== 'rating') {
       return;
     }
+    const itemId = this.reviewItem.id;
+    const token = this.reviewToken;
     this.reviewBusy = true;
+    this.clearReviewTimers();
     animateTo({ duration: 160, curve: Curve.EaseOut }, () => {
       this.pressedGrade = grade;
     });
-    setTimeout(() => {
+    this.reviewPressTimer = setTimeout(() => {
+      this.reviewPressTimer = -1;
+      if (!this.isReviewCommitActive(itemId, token)) {
+        return;
+      }
       animateTo({ duration: 180, curve: Curve.EaseIn }, () => {
         this.reviewScale = 0.95;
       });
-      setTimeout(() => {
-        this.commitReview(grade);
+      this.reviewCommitTimer = setTimeout(() => {
+        this.reviewCommitTimer = -1;
+        this.commitReview(grade, itemId, token);
       }, 170);
     }, 130);
   }
 
-  private commitReview(grade: number): void {
+  private commitReview(grade: number, itemId: string, token: number): void {
+    if (!this.isReviewCommitActive(itemId, token)) {
+      return;
+    }
     const item = this.reviewItem;
     const now = new Date();
     const result = scheduleFsrs(item, grade, now.getTime(), this.settings.targetRetention);
@@ -542,8 +587,6 @@ struct Index {
     };
     this.logs = [log, ...this.logs];
     this.closeReview();
-    this.pressedGrade = 0;
-    this.reviewBusy = false;
     this.persist();
     this.syncReminder();
     this.toast(this.t('nextReviewToast', formatDate(result.nextAt)));
@@ -958,11 +1001,11 @@ struct Index {
   }
 
   private deleteItem(id: string): void {
-    this.items = this.items.filter((item: StudyItem) => item.id !== id);
-    this.logs = this.logs.filter((log: ReviewLog) => log.itemId !== id);
     if (this.reviewItem.id === id) {
       this.closeReview();
     }
+    this.items = this.items.filter((item: StudyItem) => item.id !== id);
+    this.logs = this.logs.filter((log: ReviewLog) => log.itemId !== id);
     this.persist();
     this.syncReminder();
     this.toast(this.t('toastDeleted'));
@@ -2291,7 +2334,7 @@ struct Index {
           .borderRadius(15)
           .padding({ left: 0, right: 0 })
           .onClick(() => {
-            this.reviewStage = 'entry';
+            this.backToEntry();
           })
         Text(this.findSubject(this.reviewItem.subjectId).name)
           .fontSize(10)
