@@ -627,57 +627,198 @@ git commit -m "feat: add FSRS fields and v1 migration"
 
 ---
 
-### Task 4: Run migration in Store.load
+### Task 4: Run idempotent migration in Store.load
 
 **Files:**
 - Modify: app/entry/src/main/ets/data/Store.ets
+- Modify: app/entry/src/main/ets/domain/fsrs/Migration.ts
+- Modify: tests/migration.test.ts
 
-- [ ] **Step 1: Load v1 data and migrate once**
+**Interfaces:**
+- Produces: needsMigration(data), migrateAppData(data); migrateAppData must be idempotent
+- Consumes: StudyItem/ReviewLog/AppData shapes
 
-At the top of Store.ets add:
+- [ ] **Step 1: Add failing idempotency and guard tests**
 
-~~~ts
-import { migrateAppData } from '../domain/fsrs/Migration';
-~~~
-
-In Store.load after JSON.parse and structural validation:
-
-~~~ts
-const parsed = JSON.parse(raw) as AppData;
-if (!parsed.subjects || !parsed.items || !parsed.logs || !parsed.settings) {
-  return createDefaultData();
-}
-if (parsed.schemaVersion !== 2) {
-  const migrated = migrateAppData(parsed);
-  await Store.save(context, migrated);
-  return migrated as AppData;
-}
-~~~
-
-- [ ] **Step 2: Guard targetRetention**
+Add to tests/migration.test.ts:
 
 ~~~ts
-if (typeof parsed.settings.targetRetention !== 'number' ||
-    parsed.settings.targetRetention < 0.80 ||
-    parsed.settings.targetRetention > 0.95) {
-  parsed.settings.targetRetention = 0.90;
+import { needsMigration } from '../app/entry/src/main/ets/domain/fsrs/Migration.ts';
+
+it('does not reset an already-valid FSRS item', () => {
+  const valid = {
+    ...base,
+    scheduleMode: 'fsrs', fsrsStability: 9, fsrsDifficulty: 7,
+    fsrsState: 'review', fsrsScheduledDays: 9, fsrsLapses: 2, fsrsVersion: 6
+  };
+  const once = migrateItem(valid as any);
+  const twice = migrateItem(once as any);
+  expect(once.fsrsStability).toBe(9);
+  expect(twice.fsrsStability).toBe(9);
+  expect(twice.fsrsDifficulty).toBe(7);
+  expect(twice.fsrsLapses).toBe(2);
+});
+
+it('detects legacy items, logs, and settings', () => {
+  const data: any = {
+    schemaVersion: 2,
+    subjects: [],
+    items: [{ ...base, fsrsVersion: 6, fsrsState: 'new', fsrsStability: 0 }],
+    logs: [{ id: 'l', rating: 'got' }],
+    settings: { targetRetention: 0.8 }
+  };
+  expect(needsMigration(data)).toBe(true);
+});
+
+it('does not re-migrate fully valid data', () => {
+  const data: any = {
+    schemaVersion: 2,
+    subjects: [],
+    items: [{
+      ...base, scheduleMode: 'fsrs', fsrsStability: 4, fsrsDifficulty: 5,
+      fsrsState: 'review', fsrsScheduledDays: 4, fsrsLapses: 0, fsrsVersion: 6
+    }],
+    logs: [{
+      id: 'l', itemId: 'a', reviewedAt: 1, rating: 'got',
+      previousIntervalDays: 1, nextIntervalDays: 4, nextReviewAt: 9,
+      grade: 3, stabilityBefore: 0, stabilityAfter: 0,
+      difficultyBefore: 0, difficultyAfter: 0, elapsedDays: 1, scheduledDays: 4
+    }],
+    settings: { targetRetention: 0.8, curveDays: [1, 2] }
+  };
+  expect(needsMigration(data)).toBe(false);
+  const migrated = migrateAppData(data as any) as any;
+  expect(migrated.items[0].fsrsStability).toBe(4);
+  expect(migrated.settings.targetRetention).toBe(0.8);
+});
+~~~
+
+- [ ] **Step 2: Make Migration.ts idempotent and content-aware**
+
+Add these functions in Migration.ts:
+
+~~~ts
+function isFiniteNumber(value: unknown): boolean {
+  return typeof value === 'number' && isFinite(value);
+}
+
+export function isValidFsrsItem(item: any): boolean {
+  if (item.fsrsVersion !== 6) return false;
+  if (!isFiniteNumber(item.fsrsStability) || !isFiniteNumber(item.fsrsDifficulty)) return false;
+  if (typeof item.fsrsState !== 'string') return false;
+  if (item.reviewCount > 0 && (item.fsrsState === 'new' || !(item.fsrsStability > 0))) return false;
+  return item.fsrsStability >= 0 && item.fsrsStability <= 36500 &&
+    item.fsrsDifficulty >= 1 && item.fsrsDifficulty <= 10;
+}
+
+export function needsMigration(data: any): boolean {
+  if (data.schemaVersion !== 2) return true;
+  if (!data.items || data.items.some((item: any) => !isValidFsrsItem(item))) return true;
+  if (!data.logs || data.logs.some((log: any) => typeof log.grade !== 'number')) return true;
+  if (!data.settings || !isFiniteNumber(data.settings.targetRetention)) return true;
+  return false;
 }
 ~~~
 
-- [ ] **Step 3: Build and run migration manually**
+Update migrateItem:
 
-Build debug and install on the emulator; launch the app with existing data. Verify the records still exist and version stays.
+~~~ts
+export function migrateItem(item: any): any {
+  if (isValidFsrsItem(item)) return item;
+  const reviewed = item.reviewCount > 0;
+  return {
+    id: item.id, subjectId: item.subjectId, title: item.title,
+    createdAt: item.createdAt, scheduleMode: 'fsrs',
+    curveStage: item.curveStage, fixedIntervalDays: item.fixedIntervalDays,
+    currentIntervalDays: item.currentIntervalDays,
+    nextReviewAt: item.nextReviewAt, lastReviewedAt: item.lastReviewedAt,
+    reviewCount: item.reviewCount, status: item.status,
+    fsrsStability: reviewed ? Math.max(1, item.currentIntervalDays) : 0,
+    fsrsDifficulty: 5, fsrsState: reviewed ? 'review' : 'new',
+    fsrsScheduledDays: reviewed ? Math.max(1, item.currentIntervalDays) : 0,
+    fsrsLapses: 0, fsrsVersion: 6
+  };
+}
+~~~
+
+Update migrateLog to return an existing valid log unchanged:
+
+~~~ts
+function migrateLog(log: any): any {
+  if (typeof log.grade === 'number') return log;
+  return {
+    id: log.id, itemId: log.itemId, reviewedAt: log.reviewedAt,
+    rating: log.rating, previousIntervalDays: log.previousIntervalDays,
+    nextIntervalDays: log.nextIntervalDays, nextReviewAt: log.nextReviewAt,
+    grade: migratedGrade(log.rating), stabilityBefore: 0, stabilityAfter: 0,
+    difficultyBefore: 0, difficultyAfter: 0,
+    elapsedDays: Math.max(0, Math.round(log.previousIntervalDays)),
+    scheduledDays: Math.max(0, Math.round(log.nextIntervalDays))
+  };
+}
+~~~
+
+Update migrateSettings to preserve a valid targetRetention:
+
+~~~ts
+function migrateSettings(settings: any): any {
+  const valid = isFiniteNumber(settings.targetRetention) &&
+    settings.targetRetention >= 0.80 && settings.targetRetention <= 0.95;
+  return {
+    reminderEnabled: settings.reminderEnabled,
+    reminderTime: settings.reminderTime,
+    subjectTimes: settings.subjectTimes,
+    themeIndex: settings.themeIndex,
+    language: settings.language,
+    curveDays: settings.curveDays,
+    targetRetention: valid ? settings.targetRetention : 0.90
+  };
+}
+~~~
+
+migrateAppData remains a per-item/per-log/per-settings map, so mixed legacy/valid data is safe.
+
+- [ ] **Step 3: Use the content-based guard in Store.load**
+
+Import:
+
+~~~ts
+import { migrateAppData, needsMigration } from '../domain/fsrs/Migration';
+~~~
+
+In Store.load after structural validation:
+
+~~~ts
+const needs = needsMigration(parsed);
+if (needs) {
+  try {
+    const migrated = migrateAppData(parsed);
+    await Store.save(context, migrated);
+    return migrated as AppData;
+  } catch (error) {
+    return parsed;
+  }
+}
+~~~
+
+Do not use a StudyItem type annotation here unless Store.ets imports StudyItem. Do not return createDefaultData() after a migration failure; preserve the raw parsed data.
+
+- [ ] **Step 4: Build and test**
 
 ~~~powershell
-cd jiesheng/app
+cd jiesheng/tests
+npx vitest run
+cd ../app
 node ../.tools/node_modules/@deveco/deveco-cli/cli.js build --build-mode debug
 ~~~
 
-- [ ] **Step 4: Commit**
+Expected: all tests pass; BUILD SUCCESSFUL with CompileArkTS executed.
+
+- [ ] **Step 5: Commit**
 
 ~~~powershell
-git add app/entry/src/main/ets/data/Store.ets
-git commit -m "feat: migrate stored data to FSRS schema"
+git add app/entry/src/main/ets/data/Store.ets app/entry/src/main/ets/domain/fsrs/Migration.ts tests/migration.test.ts
+git commit -m "feat: run idempotent FSRS migration in Store"
 ~~~
 
 ---
