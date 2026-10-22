@@ -1062,7 +1062,7 @@ struct Index {
       .margin({ top: 56 })
 
       Blank()
-      Text('v1.0')
+      Text('v1.1.0')
         .fontSize(7)
         .fontColor(Tokens.mutedSoft)
         .margin({ bottom: 20 })
