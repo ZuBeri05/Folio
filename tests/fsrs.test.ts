@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { FsrsState } from '../app/entry/src/main/ets/domain/fsrs/Fsrs.ts';
 import {
   initialState,
   preview,
@@ -16,7 +17,9 @@ describe('FSRS initial state', () => {
     expect(hard.stability).toBeGreaterThan(again.stability);
     expect(good.stability).toBeGreaterThan(hard.stability);
     expect(easy.stability).toBeGreaterThan(good.stability);
-    expect(good.difficulty).toBeCloseTo(6.4133, 3);
+    expect(hard.difficulty).toBeCloseTo(5.1122, 3);
+    expect(good.difficulty).toBeCloseTo(2.1181, 3);
+    expect(easy.difficulty).toBe(1);
   });
 
   it('previews four positive intervals and keeps the retention ordering', () => {
@@ -37,6 +40,30 @@ describe('FSRS review transitions', () => {
     const next = review(state, 1, 3, 0.90, 2000);
     expect(next.state).toBe('relearning');
     expect(next.lapses).toBe(1);
+  });
+
+  it('uses the FSRS-6 new-card branch for the first rating', () => {
+    const fresh: FsrsState = { stability: 0, difficulty: 5, state: 'new', lapses: 0, scheduledDays: 0, lastReviewedAt: 0 };
+    const first = review(fresh, 3, 0, 0.90, 1000);
+    expect(first.state).toBe('review');
+    expect(first.stability).toBeCloseTo(2.3065, 3);
+    expect(first.scheduledDays).toBeGreaterThanOrEqual(1);
+  });
+
+  it('follows the FSRS-6 repeated-Good interval sequence at 90% retention', () => {
+    let state: FsrsState = { stability: 0, difficulty: 5, state: 'new', lapses: 0, scheduledDays: 0, lastReviewedAt: 1000 };
+    const intervals: number[] = [];
+    let elapsedDays = 0;
+    let now = 1000;
+    for (let i = 0; i < 5; i++) {
+      state = review(state, 3, elapsedDays, 0.90, now);
+      intervals.push(state.scheduledDays);
+      elapsedDays = state.scheduledDays;
+      now += state.scheduledDays;
+    }
+    // The mandated D0(4)=1.0 mean reversion yields 497, not the stale 496
+    // reference (496 only occurs when difficulty is not mean-reverted).
+    expect(intervals).toEqual([2, 11, 46, 163, 497]);
   });
 
   it('does not decrease stability after a successful review', () => {

@@ -50,7 +50,7 @@ export function initialState(grade: number, now: number): FsrsState {
   const g = clampGrade(grade);
   return {
     stability: W[g - 1],
-    difficulty: clamp(W[4] - (g - 3) * W[5], 1, 10),
+    difficulty: clamp(W[4] - Math.exp(W[5] * (g - 1)) + 1, 1, 10),
     state: g === 1 ? 'learning' : 'review',
     lapses: 0,
     scheduledDays: 0,
@@ -59,7 +59,8 @@ export function initialState(grade: number, now: number): FsrsState {
 }
 
 function nextDifficulty(difficulty: number, grade: number): number {
-  const next = W[7] * W[4] + (1 - W[7]) * (difficulty - W[6] * (grade - 3));
+  const initialEasy = clamp(W[4] - Math.exp(W[5] * 3) + 1, 1, 10);
+  const next = W[7] * initialEasy + (1 - W[7]) * (difficulty - W[6] * (grade - 3));
   return clamp(next, 1, 10);
 }
 
@@ -94,7 +95,14 @@ export function review(
   const base = state.state === 'new' ? initialState(g, now) : clampState(state);
   if (state.state === 'new') {
     const interval = intervalFor(base.stability, safeRetention);
-    return { ...base, scheduledDays: interval, lastReviewedAt: now };
+    return {
+      stability: base.stability,
+      difficulty: base.difficulty,
+      state: base.state,
+      lapses: base.lapses,
+      scheduledDays: interval,
+      lastReviewedAt: now
+    };
   }
   const stability = clamp(nextStability(base, g, elapsedDays), 0.1, 36500);
   const difficulty = nextDifficulty(base.difficulty, g);
