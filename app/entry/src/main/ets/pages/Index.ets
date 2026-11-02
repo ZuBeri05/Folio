@@ -6,6 +6,7 @@ import { scheduleFsrs, previewForGrades, postponeToTomorrow, startOfDay, addDays
 import { fsrsStateFromItem } from '../domain/fsrs/Scheduling.ts';
 import { formatClock, durationParts, summarize, todayCount, todayMinutes, weekBuckets } from '../domain/focus/Focus';
 import { ReminderService } from '../services/ReminderService';
+import { FocusAlert } from '../services/FocusAlert';
 import { Tokens, Motion } from '../theme/Tokens';
 import { I18n, LanguageOption } from '../services/I18n';
 
@@ -946,6 +947,14 @@ struct Index {
     this.rememberFocusMinutes(safe);
     this.persist();
     this.scheduleFocusAlarm(safe);
+    FocusAlert.prepare(getContext(this) as common.UIAbilityContext);
+  }
+
+  /** 到点了响一声，和消息通知一样；手动结束就不打扰 */
+  private ringFocusEnd(wasBreak: boolean, minutes: number): void {
+    const title = wasBreak ? this.t('focusBreakOver') : this.t('focusSummary');
+    const text = wasBreak ? this.t('focusBreakBody') : this.t('focusNotifyBody', String(minutes));
+    FocusAlert.ring(title, text);
   }
 
   private rememberFocusMinutes(minutes: number): void {
@@ -1041,6 +1050,9 @@ struct Index {
       this.summaryStart = startedAt;
       this.summaryEnd = endedAt;
       this.persist();
+      if (completed) {
+        this.ringFocusEnd(true, this.summaryMinutes);
+      }
       this.showSummary();
       return;
     }
@@ -1067,6 +1079,9 @@ struct Index {
       };
       this.focusSessions = this.focusSessions.concat([session]);
       this.persist();
+      if (completed) {
+        this.ringFocusEnd(false, summary.minutes);
+      }
       this.showSummary();
     } else {
       this.persist();
@@ -1084,10 +1099,12 @@ struct Index {
 
   private closeSummary(): void {
     this.showFocusSummary = false;
+    FocusAlert.clear();
   }
 
   private startBreak(): void {
     this.showFocusSummary = false;
+    FocusAlert.clear();
     this.focusIsBreak = true;
     this.focusPaused = false;
     this.focusRunning = true;
