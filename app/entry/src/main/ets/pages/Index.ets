@@ -3564,7 +3564,7 @@ struct Index {
           .fontSize(13)
           .fontColor(Tokens.mutedSoft)
       }
-      .width('100%')
+      .width(this.isWide ? 520 : '100%')
       .height(36)
       .padding({ left: 14, right: 14 })
       .alignItems(VerticalAlign.Center)
@@ -3761,7 +3761,7 @@ struct Index {
         ForEach([0, 1, 2, 3, 4, 5, 6], (index: number) => {
           Column() {
             Row()
-              .width('100%')
+              .width(18)
               .height(this.weekBarHeight(this.weekFocus()[index]))
               .backgroundColor(index === this.todayWeekIndex() ? Tokens.coral : '#E8DCC4')
               .borderRadius(3)
@@ -3782,7 +3782,7 @@ struct Index {
       .margin({ top: 10 })
       .alignItems(VerticalAlign.Bottom)
     }
-    .width('100%')
+    .width(this.isWide ? 560 : '100%')
     .padding({ left: 16, right: 16, top: 14, bottom: 10 })
     .backgroundColor(Tokens.surfaceSoft)
     .borderRadius(18)
