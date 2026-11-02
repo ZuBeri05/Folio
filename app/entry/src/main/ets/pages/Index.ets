@@ -1,9 +1,10 @@
 import { common } from '@kit.AbilityKit';
 import { promptAction, LengthMetrics, KeyboardAvoidMode, window } from '@kit.ArkUI';
-import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
+import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, FocusSession, SUBJECT_COLORS, createDefaultData, emptyItem, newId } from '../domain/Models';
 import { Store } from '../data/Store';
-import { scheduleFsrs, previewForGrades, postponeToTomorrow, startOfDay, addDays, daysBetween, formatDate, formatShort, formatFull, weekdayCN } from '../domain/Scheduling';
+import { scheduleFsrs, previewForGrades, postponeToTomorrow, startOfDay, addDays, daysBetween } from '../domain/Scheduling';
 import { fsrsStateFromItem } from '../domain/fsrs/Scheduling.ts';
+import { formatClock, durationParts, summarize, todayCount, todayMinutes, weekBuckets } from '../domain/focus/Focus';
 import { ReminderService } from '../services/ReminderService';
 import { Tokens, Motion } from '../theme/Tokens';
 import { I18n, LanguageOption } from '../services/I18n';
@@ -28,13 +29,12 @@ struct Index {
   @State draftMode: string = 'fsrs';
   @State modeFade: number = 1;
   private modeTimer: number = -1;
-  private lastSavedTime: string = '20:00';
-  @State timeDraft: string = '20:00';
   @State draftFixedDays: number = 3;
   @State dotVisible: number = 6;
   @State newSubjectName: string = '';
-  @State calendarX: number[] = [0, 0, 0, 0, 0, 0, 0];
-  @State calendarAlpha: number[] = [1, 1, 1, 1, 1, 1, 1];
+  @State calendarDays: number = 14;
+  @State calendarX: number[] = [];
+  @State calendarAlpha: number[] = [];
   @State formProgress: number = 1;
   @State titleFocused: boolean = false;
   @State titleBorderColor: string = '#B3FFFFFF';
@@ -61,6 +61,7 @@ struct Index {
   @State listOpacity: number = 0;
   @State listShift: number = 16;
   @State pressedGrade: number = 0;
+  @State gradePreviewDays: number[] = [1, 1, 1, 1];
   @State composerScale: number = 0.97;
   @State composerShift: number = 24;
   @State composerOpacity: number = 1;
@@ -87,6 +88,36 @@ struct Index {
   @State confirmSubjectId: string = '';
   @State confirmItemId: string = '';
   @State confirmScale: number = 1;
+  @State showTimePicker: boolean = false;
+  @State timePickerScale: number = 1;
+  @State pickerHour: number = 20;
+  @State pickerMinute: number = 0;
+  // 专注计时
+  @State focusSessions: FocusSession[] = [];
+  @State focusRunning: boolean = false;
+  @State focusPaused: boolean = false;
+  @State focusIsBreak: boolean = false;
+  @State focusEndAt: number = 0;
+  @State focusStartedAt: number = 0;
+  @State focusRemainingMs: number = 0;
+  @State focusPlannedMinutes: number = 25;
+  @State showFocusPicker: boolean = false;
+  @State focusPickerScale: number = 1;
+  @State focusPickerMinutes: number = 25;
+  @State showFocusSummary: boolean = false;
+  @State summaryScale: number = 1;
+  @State summaryMinutes: number = 0;
+  @State summaryItems: number = 0;
+  @State summaryRemembered: number = 0;
+  @State summaryCompleted: boolean = true;
+  @State summaryStart: number = 0;
+  @State summaryEnd: number = 0;
+  @State summaryIsBreak: boolean = false;
+  private focusTimer: number = -1;
+  private focusPausedRemaining: number = 0;
+  private focusPickerRange: string[] = [];
+  private hourRange: string[] = [];
+  private minuteRange: string[] = [];
   private reviewBusy: boolean = false;
   private reviewPressTimer: number = -1;
   private reviewCommitTimer: number = -1;
@@ -124,9 +155,23 @@ struct Index {
   aboutToAppear(): void {
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.NONE);
     this.bindKeyboard();
+    for (let i = 0; i < 24; i++) {
+      this.hourRange.push(i < 10 ? '0' + i : '' + i);
+    }
+    for (let i = 0; i < 60; i++) {
+      this.minuteRange.push(i < 10 ? '0' + i : '' + i);
+    }
+    for (let i = 15; i <= 90; i += 5) {
+      this.focusPickerRange.push('' + i);
+    }
     const now = new Date();
-    this.todayLabel = formatFull(now.getTime()) + '  ·  ' + weekdayCN(now.getTime());
+    this.todayLabel = this.longDate(now.getTime()) + '  ·  ' + this.weekday(now.getTime());
     this.loadData();
+  }
+
+  onPageShow(): void {
+    // 从后台回来时 setInterval 可能被节流，立刻按时间戳重算一次
+    this.tickFocus();
   }
 
   // 全屏窗口在部分机型上不会随键盘收缩，直接监听键盘高度，
@@ -152,9 +197,11 @@ struct Index {
     this.items = data.items;
     this.logs = data.logs;
     this.settings = data.settings;
-    this.lastSavedTime = data.settings.reminderTime;
-    this.timeDraft = data.settings.reminderTime;
+    this.focusSessions = data.focusSessions;
+    this.focusPlannedMinutes = this.settings.focusMinutes;
+    this.focusPickerMinutes = this.settings.focusMinutes;
     this.todayLabel = this.localizedToday();
+    this.restoreFocus(data.activeFocus);
     this.syncSystemBars();
     if (this.subjects.length > 0) {
       this.draftSubjectId = this.subjects[0].id;
@@ -289,7 +336,9 @@ struct Index {
       subjects: this.subjects,
       items: this.items,
       logs: this.logs,
-      settings: this.settings
+      settings: this.settings,
+      focusSessions: this.focusSessions,
+      activeFocus: this.currentFocusRecord()
     };
     Store.save(context, data).catch(() => {
       this.toast(this.t('toastSaveFail'));
@@ -372,9 +421,8 @@ struct Index {
       return;
     }
     if (this.tab === 3) {
-      // 离开设置页时先收键盘，再把提醒时间的草稿恢复成已保存的值，非法输入不会留在界面上
+      // 离开设置页时先收键盘，避免输入法留在下一个页面
       this.getUIContext().getFocusController().clearFocus();
-      this.timeDraft = this.settings.reminderTime;
     }
     const forward = next > this.tab;
     const isCalendar = next === 2;
@@ -410,19 +458,69 @@ struct Index {
   }
 
   private itemSubtitle(item: StudyItem): string {
-    return this.t('times', item.reviewCount) + '  ·  ' + this.t('next') + ' ' + formatShort(item.nextReviewAt);
+    const late = this.overdueDaysOf(item);
+    if (late > 0) {
+      return this.t('times', item.reviewCount) + '  ·  ' + this.t('overdueDays', late);
+    }
+    return this.t('times', item.reviewCount) + '  ·  ' + this.t('next') + ' ' + this.shortDate(item.nextReviewAt);
+  }
+
+  private itemSubtitleColor(item: StudyItem): string {
+    return this.overdueDaysOf(item) > 0 ? Tokens.coral : Tokens.muted;
+  }
+
+  /** 到期日早于今天且还没做的条目 */
+  private overdueItems(): StudyItem[] {
+    const today = startOfDay(new Date()).getTime();
+    const result: StudyItem[] = [];
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
+      if (item.status === 'active' && startOfDay(new Date(item.nextReviewAt)).getTime() < today) {
+        result.push(item);
+      }
+    }
+    return result;
+  }
+
+  /** 逾期天数，当天到期算 0 */
+  private overdueDaysOf(item: StudyItem): number {
+    const due = startOfDay(new Date(item.nextReviewAt)).getTime();
+    const today = startOfDay(new Date()).getTime();
+    if (due >= today) {
+      return 0;
+    }
+    return Math.max(1, daysBetween(due, new Date()));
+  }
+
+  private oldestOverdueLabel(): string {
+    const list = this.overdueItems();
+    if (list.length === 0) {
+      return '';
+    }
+    let oldest = list[0].nextReviewAt;
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].nextReviewAt < oldest) {
+        oldest = list[i].nextReviewAt;
+      }
+    }
+    return this.shortDate(oldest);
   }
 
   private upcoming(): DayCount[] {
     const result: DayCount[] = [];
     const base = startOfDay(new Date());
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < this.calendarDays; i++) {
       const day = addDays(base, i);
       const key = day.getTime();
       let count = 0;
       for (let j = 0; j < this.items.length; j++) {
         const item = this.items[j];
-        if (item.status === 'active' && startOfDay(new Date(item.nextReviewAt)).getTime() === key) {
+        if (item.status !== 'active') {
+          continue;
+        }
+        const at = startOfDay(new Date(item.nextReviewAt)).getTime();
+        // 第一天算上逾期：今天要复习的条目（含拖过期的）和首页「今日复习」保持一致
+        if (i === 0 ? at <= key : at === key) {
           count++;
         }
       }
@@ -431,8 +529,26 @@ struct Index {
     return result;
   }
 
-  private gradePreview(): number[] {
-    return previewForGrades(this.reviewItem, Date.now(), this.settings.targetRetention);
+  /** 某一天要复习的条目；today 为真时把逾期未做的也算进来，最久没做的排最前 */
+  private dayItems(day: number, today: boolean): StudyItem[] {
+    const result: StudyItem[] = [];
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
+      if (item.status !== 'active') {
+        continue;
+      }
+      const at = startOfDay(new Date(item.nextReviewAt)).getTime();
+      if (today ? at <= day : at === day) {
+        result.push(item);
+      }
+    }
+    result.sort((a: StudyItem, b: StudyItem) => a.nextReviewAt - b.nextReviewAt);
+    return result;
+  }
+
+  /** 进入评分前算一次四档预览，四张评分卡共用，避免每张卡各算一遍 */
+  private refreshGradePreview(item: StudyItem): void {
+    this.gradePreviewDays = previewForGrades(item, Date.now(), this.settings.targetRetention, this.settings.maxIntervalDays);
   }
 
   private intervalText(days: number): string {
@@ -483,9 +599,8 @@ struct Index {
   }
 
   private gradeIntervalText(grade: number): string {
-    const preview = this.gradePreview();
     const index = grade - 1;
-    const days = index >= 0 && index < preview.length ? preview[index] : 1;
+    const days = index >= 0 && index < this.gradePreviewDays.length ? this.gradePreviewDays[index] : 1;
     return this.intervalText(days);
   }
 
@@ -540,6 +655,7 @@ struct Index {
     this.reviewStage = 'entry';
     this.reviewOpacity = 0;
     this.reviewScale = 0.90;
+    this.refreshGradePreview(item);
     this.showReview = true;
     animateTo({ curve: Motion.settle() }, () => {
       this.reviewOpacity = 1;
@@ -576,6 +692,7 @@ struct Index {
   }
 
   private startRating(): void {
+    this.refreshGradePreview(this.reviewItem);
     this.reviewScale = 0.96;
     animateTo({ curve: Motion.snap() }, () => {
       this.reviewStage = 'rating';
@@ -625,7 +742,8 @@ struct Index {
     }
     const item = this.reviewItem;
     const now = new Date();
-    const result = scheduleFsrs(item, grade, now.getTime(), this.settings.targetRetention);
+    const result = scheduleFsrs(item, grade, now.getTime(), this.settings.targetRetention,
+      this.settings.maxIntervalDays);
     const before = fsrsStateFromItem(item);
     const updated: StudyItem = {
       id: item.id,
@@ -670,7 +788,7 @@ struct Index {
     this.closeReview();
     this.persist();
     this.syncReminder();
-    this.toast(this.t('nextReviewToast', formatDate(result.nextAt)));
+    this.toast(this.t('nextReviewToast', this.longDate(result.nextAt)));
   }
 
   private addItem(): void {
@@ -714,7 +832,7 @@ struct Index {
     this.switchTab(0);
     this.persist();
     this.syncReminder();
-    this.toast(this.t('toastSaved', formatDate(item.nextReviewAt)));
+    this.toast(this.t('toastSaved', this.longDate(item.nextReviewAt)));
   }
 
   private updateReminderEnabled(value: boolean): void {
@@ -724,34 +842,389 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      targetRetention: this.settings.targetRetention
+      targetRetention: this.settings.targetRetention,
+      maxIntervalDays: this.settings.maxIntervalDays,
+      focusMinutes: this.settings.focusMinutes
     };
     this.persist();
     this.syncReminder();
   }
 
-  private isValidTime(value: string): boolean {
-    const pattern: RegExp = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
-    return pattern.test(value);
+  /** 滑轮选时间：弹出自己的小面板，滚完点确定直接落盘并重写日历 */
+  private openTimePicker(): void {
+    const parts: string[] = this.settings.reminderTime.split(':');
+    let hour = 20;
+    let minute = 0;
+    if (parts.length === 2) {
+      const h = Number(parts[0]);
+      const m = Number(parts[1]);
+      if (!isNaN(h) && h >= 0 && h <= 23) {
+        hour = h;
+      }
+      if (!isNaN(m) && m >= 0 && m <= 59) {
+        minute = m;
+      }
+    }
+    this.pickerHour = hour;
+    this.pickerMinute = minute;
+    this.showTimePicker = true;
+    this.timePickerScale = 0.94;
+    animateTo({ curve: Motion.snap() }, () => {
+      this.timePickerScale = 1;
+    });
   }
 
-  // 输入框里放草稿，只有格式合法才写进设置并落盘，设置里永远是合法值
-  private updateReminderTime(value: string): void {
-    this.timeDraft = value;
-    if (!this.isValidTime(value)) {
+  private cancelTimePicker(): void {
+    this.showTimePicker = false;
+  }
+
+  private confirmTimePicker(): void {
+    this.showTimePicker = false;
+    this.applyReminderTime(this.pickerHour, this.pickerMinute);
+  }
+
+  private applyReminderTime(hour: number, minute: number): void {
+    const h = hour < 10 ? '0' + hour : '' + hour;
+    const m = minute < 10 ? '0' + minute : '' + minute;
+    const value = h + ':' + m;
+    if (value === this.settings.reminderTime) {
       return;
     }
-    this.lastSavedTime = value;
     this.settings = {
       reminderEnabled: this.settings.reminderEnabled,
       reminderTime: value,
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      targetRetention: this.settings.targetRetention
+      targetRetention: this.settings.targetRetention,
+      maxIntervalDays: this.settings.maxIntervalDays,
+      focusMinutes: this.settings.focusMinutes
     };
     this.persist();
     this.syncReminder();
+  }
+
+  // ---------------- 专注计时 ----------------
+
+  private openFocusPicker(): void {
+    if (this.focusRunning) {
+      return;
+    }
+    this.focusPickerMinutes = this.settings.focusMinutes;
+    this.showFocusPicker = true;
+    this.focusPickerScale = 0.94;
+    animateTo({ curve: Motion.snap() }, () => {
+      this.focusPickerScale = 1;
+    });
+  }
+
+  private cancelFocusPicker(): void {
+    this.showFocusPicker = false;
+  }
+
+  private confirmFocusPicker(): void {
+    this.showFocusPicker = false;
+    this.startFocus(this.focusPickerMinutes);
+  }
+
+  private focusPickerIndex(): number {
+    const index = Math.round((this.focusPickerMinutes - 15) / 5);
+    return Math.min(this.focusPickerRange.length - 1, Math.max(0, index));
+  }
+
+  private startFocus(minutes: number): void {
+    const safe = Math.min(90, Math.max(5, Math.round(minutes)));
+    this.focusIsBreak = false;
+    this.focusPaused = false;
+    this.focusRunning = true;
+    this.focusPlannedMinutes = safe;
+    this.focusStartedAt = Date.now();
+    this.focusEndAt = this.focusStartedAt + safe * 60000;
+    this.focusRemainingMs = safe * 60000;
+    this.focusPausedRemaining = 0;
+    this.beginFocusTick();
+    this.rememberFocusMinutes(safe);
+    this.persist();
+    this.scheduleFocusAlarm(safe);
+  }
+
+  private rememberFocusMinutes(minutes: number): void {
+    if (minutes === this.settings.focusMinutes) {
+      return;
+    }
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language,
+      targetRetention: this.settings.targetRetention,
+      maxIntervalDays: this.settings.maxIntervalDays,
+      focusMinutes: minutes
+    };
+  }
+
+  private beginFocusTick(): void {
+    this.stopFocusTick();
+    this.focusTimer = setInterval(() => {
+      this.tickFocus();
+    }, 250);
+  }
+
+  private stopFocusTick(): void {
+    if (this.focusTimer >= 0) {
+      clearInterval(this.focusTimer);
+      this.focusTimer = -1;
+    }
+  }
+
+  private tickFocus(): void {
+    if (!this.focusRunning || this.focusPaused) {
+      return;
+    }
+    const left = this.focusEndAt - Date.now();
+    this.focusRemainingMs = left > 0 ? left : 0;
+    if (left <= 0) {
+      this.finishFocus(true);
+    }
+  }
+
+  private pauseFocus(): void {
+    if (!this.focusRunning || this.focusPaused) {
+      return;
+    }
+    this.focusPausedRemaining = Math.max(0, this.focusEndAt - Date.now());
+    this.focusRemainingMs = this.focusPausedRemaining;
+    this.focusPaused = true;
+    this.persist();
+    this.clearFocusAlarm();
+  }
+
+  private resumeFocus(): void {
+    if (!this.focusRunning || !this.focusPaused) {
+      return;
+    }
+    this.focusEndAt = Date.now() + this.focusPausedRemaining;
+    this.focusPaused = false;
+    this.persist();
+    this.scheduleFocusAlarm(Math.max(1, Math.round(this.focusPausedRemaining / 60000)));
+  }
+
+  private stopFocusEarly(): void {
+    if (!this.focusRunning) {
+      return;
+    }
+    this.finishFocus(false);
+  }
+
+  private finishFocus(completed: boolean, endOverride?: number): void {
+    if (!this.focusRunning) {
+      return;
+    }
+    const startedAt = this.focusStartedAt;
+    const endedAt = endOverride !== undefined ? endOverride : Date.now();
+    const wasBreak = this.focusIsBreak;
+    const planned = this.focusPlannedMinutes;
+    this.stopFocusTick();
+    this.focusRunning = false;
+    this.focusPaused = false;
+    this.focusIsBreak = false;
+    this.focusRemainingMs = 0;
+    this.clearFocusAlarm();
+
+    if (wasBreak) {
+      this.summaryIsBreak = true;
+      this.summaryMinutes = Math.max(1, Math.round((endedAt - startedAt) / 60000));
+      this.summaryItems = 0;
+      this.summaryRemembered = 0;
+      this.summaryCompleted = completed;
+      this.summaryStart = startedAt;
+      this.summaryEnd = endedAt;
+      this.persist();
+      this.showSummary();
+      return;
+    }
+
+    const summary = summarize(startedAt, endedAt, this.logs);
+    this.summaryIsBreak = false;
+    this.summaryMinutes = summary.minutes;
+    this.summaryItems = summary.itemCount;
+    this.summaryRemembered = summary.remembered;
+    this.summaryCompleted = completed;
+    this.summaryStart = startedAt;
+    this.summaryEnd = endedAt;
+
+    if (summary.minutes >= 1) {
+      const session: FocusSession = {
+        id: newId(),
+        startedAt: startedAt,
+        endedAt: endedAt,
+        plannedMinutes: planned,
+        minutes: summary.minutes,
+        itemCount: summary.itemCount,
+        remembered: summary.remembered,
+        completed: completed
+      };
+      this.focusSessions = this.focusSessions.concat([session]);
+      this.persist();
+      this.showSummary();
+    } else {
+      this.persist();
+      this.toast(this.t('focusTooShort'));
+    }
+  }
+
+  private showSummary(): void {
+    this.summaryScale = 0.94;
+    this.showFocusSummary = true;
+    animateTo({ curve: Motion.snap() }, () => {
+      this.summaryScale = 1;
+    });
+  }
+
+  private closeSummary(): void {
+    this.showFocusSummary = false;
+  }
+
+  private startBreak(): void {
+    this.showFocusSummary = false;
+    this.focusIsBreak = true;
+    this.focusPaused = false;
+    this.focusRunning = true;
+    this.focusPlannedMinutes = 5;
+    this.focusStartedAt = Date.now();
+    this.focusEndAt = this.focusStartedAt + 5 * 60000;
+    this.focusRemainingMs = 5 * 60000;
+    this.focusPausedRemaining = 0;
+    this.beginFocusTick();
+    this.persist();
+    this.scheduleFocusAlarm(5);
+  }
+
+  private startNextRound(): void {
+    this.showFocusSummary = false;
+    this.openFocusPicker();
+  }
+
+  /** 冷启动时把没跑完的专注接回来 */
+  private restoreFocus(active: FocusSession | null): void {
+    if (active === null) {
+      return;
+    }
+    this.focusStartedAt = active.startedAt;
+    this.focusPlannedMinutes = active.plannedMinutes;
+    this.focusEndAt = active.endedAt;
+    this.focusIsBreak = false;
+    this.focusPaused = false;
+    this.focusRunning = true;
+    if (active.endedAt > Date.now()) {
+      this.focusRemainingMs = active.endedAt - Date.now();
+      this.beginFocusTick();
+      return;
+    }
+    // 关掉 App 期间已经过点了：按原定结束时间结算
+    this.finishFocus(true, active.endedAt);
+  }
+
+  private currentFocusRecord(): FocusSession | null {
+    if (!this.focusRunning || this.focusIsBreak) {
+      return null;
+    }
+    return {
+      id: 'active',
+      startedAt: this.focusStartedAt,
+      endedAt: this.focusPaused ? Date.now() + this.focusPausedRemaining : this.focusEndAt,
+      plannedMinutes: this.focusPlannedMinutes,
+      minutes: 0,
+      itemCount: 0,
+      remembered: 0,
+      completed: false
+    };
+  }
+
+  private scheduleFocusAlarm(minutes: number): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    ReminderService.scheduleFocusEnd(context, this.focusEndAt, minutes).catch(() => {
+    });
+  }
+
+  private clearFocusAlarm(): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    ReminderService.clearFocusEnd(context).catch(() => {
+    });
+  }
+
+  private focusProgress(): number {
+    const total = this.focusPlannedMinutes * 60000;
+    if (total <= 0) {
+      return 0;
+    }
+    const done = total - this.focusRemainingMs;
+    return Math.min(100, Math.max(0, Math.round(done / total * 100)));
+  }
+
+  private focusClock(): string {
+    return formatClock(this.focusRemainingMs);
+  }
+
+  /** 25 分钟 / 1 小时 15 分 */
+  private minutesLabel(minutes: number): string {
+    const parts = durationParts(minutes);
+    if (parts[0] <= 0) {
+      return this.t('minutesShort', parts[1]);
+    }
+    if (parts[1] === 0) {
+      return this.t('hoursShort', parts[0]);
+    }
+    return this.t('hoursShort', parts[0]) + ' ' + this.t('minutesShort', parts[1]);
+  }
+
+  private todayFocusMinutes(): number {
+    return todayMinutes(this.focusSessions, Date.now());
+  }
+
+  private todayFocusCount(): number {
+    return todayCount(this.focusSessions, Date.now());
+  }
+
+  private weekFocus(): number[] {
+    return weekBuckets(this.focusSessions, Date.now());
+  }
+
+  private weekFocusMax(): number {
+    const buckets = this.weekFocus();
+    let max = 0;
+    for (let i = 0; i < buckets.length; i++) {
+      if (buckets[i] > max) {
+        max = buckets[i];
+      }
+    }
+    return Math.max(30, max);
+  }
+
+  private weekBarHeight(minutes: number): number {
+    if (minutes <= 0) {
+      return 3;
+    }
+    return Math.max(6, Math.round(minutes / this.weekFocusMax() * 38));
+  }
+
+  /** 本周第 index 天（0 = 周一）的日期戳 */
+  private weekDayTs(index: number): number {
+    const now = new Date();
+    const weekday = (now.getDay() + 6) % 7;
+    return startOfDay(now).getTime() + (index - weekday) * 86400000;
+  }
+
+  private todayWeekIndex(): number {
+    return (new Date().getDay() + 6) % 7;
+  }
+
+  private clockLabel(ts: number): string {
+    const d = new Date(ts);
+    const h = d.getHours();
+    const m = d.getMinutes();
+    return (h < 10 ? '0' + h : '' + h) + ':' + (m < 10 ? '0' + m : '' + m);
   }
 
   private updateRetention(value: number): void {
@@ -765,17 +1238,28 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: this.settings.language,
-      targetRetention: retention
+      targetRetention: retention,
+      maxIntervalDays: this.settings.maxIntervalDays,
+      focusMinutes: this.settings.focusMinutes
     };
   }
 
-  // 编辑结束时如果还是非法值，就退回上次保存的时间
-  private commitReminderTime(): void {
-    if (this.isValidTime(this.timeDraft)) {
+  /** 最长间隔：考研只有几个月，排到三年后没意义，超过上限一律按上限走 */
+  private updateMaxInterval(days: number): void {
+    if (days === this.settings.maxIntervalDays) {
       return;
     }
-    this.timeDraft = this.lastSavedTime;
-    this.toast(this.t('toastTime'));
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language,
+      targetRetention: this.settings.targetRetention,
+      maxIntervalDays: days,
+      focusMinutes: this.settings.focusMinutes
+    };
+    this.persist();
   }
 
   private updateTheme(index: number): void {
@@ -785,7 +1269,9 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: index,
       language: this.settings.language,
-      targetRetention: this.settings.targetRetention
+      targetRetention: this.settings.targetRetention,
+      maxIntervalDays: this.settings.maxIntervalDays,
+      focusMinutes: this.settings.focusMinutes
     };
     this.persist();
     this.syncSystemBars();
@@ -817,6 +1303,19 @@ struct Index {
     return I18n.t(this.settings.language, key, a, b);
   }
 
+  /** 日期按当前界面语言格式化，不再固定输出中文 */
+  private shortDate(ts: number): string {
+    return I18n.dateShort(this.settings.language, ts);
+  }
+
+  private longDate(ts: number): string {
+    return I18n.dateLong(this.settings.language, ts);
+  }
+
+  private weekday(ts: number): string {
+    return I18n.weekday(this.settings.language, ts);
+  }
+
   private navLabel(index: number): string {
     const keys: string[] = ['navToday', 'navRecords', 'navCalendar', 'navSettings'];
     const safe = index >= 0 && index < keys.length ? index : 0;
@@ -834,7 +1333,7 @@ struct Index {
       }).format(new Date());
       return text.replace(',', ' · ');
     } catch (error) {
-      return formatFull(Date.now()) + ' · ' + weekdayCN(Date.now());
+      return this.longDate(Date.now()) + ' · ' + this.weekday(Date.now());
     }
   }
 
@@ -845,7 +1344,9 @@ struct Index {
       subjectTimes: this.settings.subjectTimes,
       themeIndex: this.settings.themeIndex,
       language: code,
-      targetRetention: this.settings.targetRetention
+      targetRetention: this.settings.targetRetention,
+      maxIntervalDays: this.settings.maxIntervalDays,
+      focusMinutes: this.settings.focusMinutes
     };
     this.todayLabel = this.localizedToday();
     this.persist();
@@ -1032,28 +1533,6 @@ struct Index {
     animateTo({ curve: Motion.snap() }, () => {
       this.confirmScale = 1;
     });
-    return;
-    AlertDialog.show({
-      title: '删除科目？',
-      message: subject.name,
-      primaryButton: {
-        value: '取消',
-        action: () => {
-        }
-      },
-      secondaryButton: {
-        value: '删除',
-        fontColor: '#C7422C',
-        action: () => {
-          this.subjects = this.subjects.filter((value: Subject) => value.id !== subject.id);
-          if (this.draftSubjectId === subject.id && this.subjects.length > 0) {
-            this.draftSubjectId = this.subjects[0].id;
-          }
-          this.persist();
-          this.toast(this.t('toastSubjectDeleted', subject.name));
-        }
-      }
-    });
   }
 
   private askDeleteRecord(item: StudyItem): void {
@@ -1162,7 +1641,7 @@ struct Index {
     cursor.scheduleMode = 'fsrs';
     let at = Date.now();
     for (let i = 0; i < 5; i++) {
-      const result = scheduleFsrs(cursor, 3, at, this.settings.targetRetention);
+      const result = scheduleFsrs(cursor, 3, at, this.settings.targetRetention, this.settings.maxIntervalDays);
       labels.push(this.t('days', result.nextIntervalDays));
       cursor = {
         id: cursor.id,
@@ -1190,17 +1669,19 @@ struct Index {
   }
 
   private playCalendarRows(): void {
-    this.calendarX = [0, 0, 0, 0, 0, 0, 0];
-    this.calendarAlpha = [0, 0, 0, 0, 0, 0, 0];
-    const travel = this.mv(48);
-    for (let i = 0; i < 7; i++) {
-      setTimeout(() => {
-        const start = this.calendarX.slice();
-        start[i] = travel;
-        this.calendarX = start;
-        const dark = this.calendarAlpha.slice();
-        dark[i] = 0;
-        this.calendarAlpha = dark;
+    const total = this.calendarDays;
+    const xs: number[] = [];
+    const alphas: number[] = [];
+    for (let i = 0; i < total; i++) {
+      xs.push(this.mv(48));
+      alphas.push(0);
+    }
+    this.calendarX = xs;
+    this.calendarAlpha = alphas;
+    // 每一行都入场，滑到哪儿切换天数看到的都一样；行多时压缩间隔，整体仍收在 0.8s 内
+    const step = Math.min(55, Math.round(780 / total));
+    setTimeout(() => {
+      for (let i = 0; i < total; i++) {
         setTimeout(() => {
           animateTo({ curve: Motion.bounce() }, () => {
             const hit = this.calendarX.slice();
@@ -1210,9 +1691,25 @@ struct Index {
             lit[i] = 1;
             this.calendarAlpha = lit;
           });
-        }, 16);
-      }, i * 55);
+        }, i * step);
+      }
+    }, 16);
+  }
+
+  private calX(index: number): number {
+    return index < this.calendarX.length ? this.calendarX[index] : 0;
+  }
+
+  private calAlpha(index: number): number {
+    return index < this.calendarAlpha.length ? this.calendarAlpha[index] : 1;
+  }
+
+  private setCalendarDays(days: number): void {
+    if (this.calendarDays === days) {
+      return;
     }
+    this.calendarDays = days;
+    this.playCalendarRows();
   }
 
   build() {
@@ -1233,6 +1730,15 @@ struct Index {
       }
       if (this.showConfirm) {
         this.ConfirmOverlay()
+      }
+      if (this.showTimePicker) {
+        this.TimePickerOverlay()
+      }
+      if (this.showFocusPicker) {
+        this.FocusPickerOverlay()
+      }
+      if (this.showFocusSummary) {
+        this.FocusSummaryOverlay()
       }
     }
     .width('100%')
@@ -1268,6 +1774,9 @@ struct Index {
         } else {
           this.OtherPage()
         }
+        if (this.focusRunning && this.tab !== 0) {
+          this.FocusMiniBar()
+        }
       }
       .layoutWeight(1)
       .height('100%')
@@ -1284,6 +1793,9 @@ struct Index {
         this.TodayPane()
       } else {
         this.OtherPage()
+      }
+      if (this.focusRunning && this.tab !== 0) {
+        this.FocusMiniBar()
       }
       this.BottomNav()
     }
@@ -1392,7 +1904,19 @@ struct Index {
       .alignItems(VerticalAlign.Center)
       .translate({ x: (1 - this.todayTitleIn) * -this.mv(72) })
       .opacity(0.3 + 0.7 * Math.min(1, this.todayTitleIn * 1.8))
-      .margin({ top: this.isWide ? 10 : 8, bottom: 22 })
+      .margin({ top: this.isWide ? 10 : 8, bottom: this.overdueItems().length > 0 ? 6 : 14 })
+
+      this.FocusBar()
+
+      // 欠账要摆在明面上：漏了几天、最早欠到哪天
+      if (this.overdueItems().length > 0) {
+        Text(this.t('overdueHint', this.overdueItems().length, this.oldestOverdueLabel()))
+          .fontSize(11.5)
+          .fontColor(Tokens.coral)
+          .margin({ bottom: 16 })
+          .translate({ x: (1 - this.todayTitleIn) * -this.mv(72) })
+          .opacity(0.3 + 0.7 * Math.min(1, this.todayTitleIn * 1.8))
+      }
 
       Scroll() {
         Column({ space: 12 }) {
@@ -1512,7 +2036,7 @@ struct Index {
               .fontColor(Tokens.ink)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(this.findSubject(item.subjectId).name + '  ·  ' + this.t('next') + ' ' + formatShort(item.nextReviewAt))
+            Text(this.findSubject(item.subjectId).name + '  ·  ' + this.t('next') + ' ' + this.shortDate(item.nextReviewAt))
               .fontSize(9)
               .fontColor(Tokens.muted)
               .margin({ top: 3 })
@@ -1570,7 +2094,7 @@ struct Index {
           .margin({ top: 4 })
         Text(this.itemSubtitle(item))
           .fontSize(11.5)
-          .fontColor(Tokens.muted)
+          .fontColor(this.itemSubtitleColor(item))
           .margin({ top: 4 })
       }
       .layoutWeight(1)
@@ -1621,10 +2145,10 @@ struct Index {
           .letterSpacing(-0.6)
         Blank()
         Column() {
-          Text(formatShort(Date.now()))
+          Text(this.shortDate(Date.now()))
             .fontSize(7.5)
             .fontColor(Tokens.mutedSoft)
-          Text(weekdayCN(Date.now()))
+          Text(this.weekday(Date.now()))
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.inkSoft)
@@ -1921,6 +2445,10 @@ struct Index {
       .width('100%')
       .margin({ top: 24, bottom: 18 })
 
+      if (this.focusSessions.length > 0) {
+        this.FocusWeekCard()
+      }
+
       if (this.items.length === 0) {
         Text(this.t('noRecords'))
           .fontSize(14)
@@ -1945,11 +2473,11 @@ struct Index {
 
                 // 日期：在线的右边、卡片外面
                 Column() {
-                  Text(formatShort(item.createdAt))
+                  Text(this.shortDate(item.createdAt))
                     .fontSize(11)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(Tokens.muted)
-                  Text(weekdayCN(item.createdAt))
+                  Text(this.weekday(item.createdAt))
                     .fontSize(9)
                     .fontColor(Tokens.mutedSoft)
                     .margin({ top: 2 })
@@ -1979,7 +2507,7 @@ struct Index {
                   Text(this.t('next'))
                     .fontSize(8)
                     .fontColor(Tokens.mutedSoft)
-                  Text(formatShort(item.nextReviewAt))
+                  Text(this.shortDate(item.nextReviewAt))
                     .fontSize(10)
                     .fontColor(Tokens.muted)
                     .margin({ top: 2 })
@@ -2032,15 +2560,40 @@ struct Index {
   @Builder CalendarPage() {
     Column() {
       Column() {
-        Text(this.t('calendarTitle'))
-          .fontSize(this.isWide ? 44 : 32)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.ink)
-          .margin({ top: 24 })
-        Text(this.t('next7'))
-          .fontSize(11)
-          .fontColor(Tokens.muted)
-          .margin({ top: 6, bottom: 18 })
+        Row() {
+          Column() {
+            Text(this.t('calendarTitle'))
+              .fontSize(this.isWide ? 44 : 32)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(Tokens.ink)
+            Text(this.t('nextDays', this.calendarDays))
+              .fontSize(11)
+              .fontColor(Tokens.muted)
+              .margin({ top: 6 })
+          }
+          .alignItems(HorizontalAlign.Start)
+
+          Blank()
+
+          // 看多远由自己定：7 天够用，30 天看一整月
+          Row({ space: 6 }) {
+            ForEach([7, 14, 30], (value: number) => {
+              Text(this.t('days', value))
+                .fontSize(10.5)
+                .fontWeight(this.calendarDays === value ? FontWeight.Bold : FontWeight.Normal)
+                .fontColor(this.calendarDays === value ? '#6C4B00' : Tokens.muted)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .backgroundColor(this.calendarDays === value ? Tokens.yellowSoft : Tokens.surfaceSoft)
+                .borderRadius(12)
+                .onClick(() => {
+                  this.setCalendarDays(value);
+                })
+            }, (value: number) => '' + value)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Bottom)
+        .margin({ top: 24, bottom: 18 })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -2051,14 +2604,22 @@ struct Index {
           ForEach(this.upcoming(), (day: DayCount, index: number) => {
             Row() {
               Column() {
-                Text(formatShort(day.date))
+                Text(this.shortDate(day.date))
                   .fontSize(18)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(Tokens.ink)
-                Text(weekdayCN(day.date))
+                Text(this.weekday(day.date))
                   .fontSize(9)
                   .fontColor(Tokens.muted)
                   .margin({ top: 2 })
+                if (index === 0 && this.overdueItems().length > 0) {
+                  Text(this.t('overdueInDay', this.overdueItems().length))
+                    .fontSize(8.5)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(Tokens.coral)
+                    .margin({ top: 3 })
+                    .maxLines(1)
+                }
               }
               .width(64)
               .alignItems(HorizontalAlign.Start)
@@ -2069,7 +2630,7 @@ struct Index {
                     .fontSize(11)
                     .fontColor(Tokens.mutedSoft)
                 } else {
-                  ForEach(this.items.filter((value: StudyItem) => value.status === 'active' && startOfDay(new Date(value.nextReviewAt)).getTime() === day.date), (item: StudyItem) => {
+                  ForEach(this.dayItems(day.date, index === 0), (item: StudyItem) => {
                     Row() {
                       Circle({ width: 6, height: 6 })
                         .fill(this.findSubject(item.subjectId).color)
@@ -2092,14 +2653,16 @@ struct Index {
               .layoutWeight(1)
             }
             .width('100%')
-            .padding(16)
+            .padding(day.count === 0
+              ? { left: 16, right: 16, top: 10, bottom: 10 }
+              : { left: 16, right: 16, top: 16, bottom: 16 })
             .alignItems(VerticalAlign.Top)
-            .backgroundColor(Tokens.surfaceSoft)
+            .backgroundColor(day.count === 0 ? '#66FFFDF8' : Tokens.surfaceSoft)
             .borderRadius(18)
-            .borderWidth(1)
+            .borderWidth(day.count === 0 ? 0 : 1)
             .borderColor('#B3FFFFFF')
-            .opacity(Math.min(1, this.calendarAlpha[index]))
-            .translate({ x: this.calendarX[index] })
+            .opacity(Math.min(1, this.calAlpha(index)))
+            .translate({ x: this.calX(index) })
           }, (day: DayCount) => '' + day.date)
         }
         .width('100%')
@@ -2163,25 +2726,22 @@ struct Index {
             .fontSize(11)
             .fontColor(Tokens.muted)
           Blank()
-          TextInput({ text: $$this.timeDraft })
-            .width(84)
-            .height(34)
-            .fontSize(12)
-            .fontColor(Tokens.inkSoft)
-            .textAlign(TextAlign.End)
-            .backgroundColor(Tokens.surface)
-            .borderRadius(10)
-            .onChange((value: string) => {
-              this.updateReminderTime(value);
-            })
-            .onSubmit(() => {
-              this.commitReminderTime();
-            })
-            .onEditChange((isEditing: boolean) => {
-              if (!isEditing) {
-                this.commitReminderTime();
-              }
-            })
+          Row({ space: 5 }) {
+            Text(this.settings.reminderTime)
+              .fontSize(13)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.settings.reminderEnabled ? Tokens.inkSoft : Tokens.mutedSoft)
+            Text('▾')
+              .fontSize(9)
+              .fontColor(Tokens.mutedSoft)
+              .margin({ bottom: 2 })
+          }
+          .padding({ left: 14, right: 12, top: 8, bottom: 8 })
+          .backgroundColor(Tokens.surface)
+          .borderRadius(10)
+          .onClick(() => {
+            this.openTimePicker();
+          })
         }
         .width('100%')
         .margin({ top: 16 })
@@ -2288,6 +2848,32 @@ struct Index {
           .lineHeight(this.isWide ? 16 : 15)
           .fontColor(Tokens.inkSoft)
           .margin({ top: 10 })
+
+        Divider()
+          .color(Tokens.line)
+          .margin({ top: 16, bottom: 14 })
+
+        // 超过上限的间隔一律按上限走
+        Text(this.t('maxIntervalTitle'))
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.ink)
+
+        Row({ space: 6 }) {
+          ForEach([90, 180, 365, 0], (value: number) => {
+            Text(value === 0 ? this.t('unlimited') : this.t('daysShort', value))
+              .fontSize(10)
+              .fontWeight(this.settings.maxIntervalDays === value ? FontWeight.Bold : FontWeight.Normal)
+              .fontColor(this.settings.maxIntervalDays === value ? '#6C4B00' : Tokens.muted)
+              .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+              .backgroundColor(this.settings.maxIntervalDays === value ? Tokens.yellowSoft : Tokens.surface)
+              .borderRadius(11)
+              .onClick(() => {
+                this.updateMaxInterval(value);
+              })
+          }, (value: number) => '' + value)
+        }
+        .margin({ top: 10 })
 
       }
       .width('100%')
@@ -2610,7 +3196,7 @@ struct Index {
         .fontColor(Tokens.ink)
         .letterSpacing(-1)
         .margin({ top: 14 })
-      Text(this.t('lastReview', formatShort(this.reviewItem.lastReviewedAt > 0 ? this.reviewItem.lastReviewedAt : this.reviewItem.createdAt)))
+      Text(this.t('lastReview', this.shortDate(this.reviewItem.lastReviewedAt > 0 ? this.reviewItem.lastReviewedAt : this.reviewItem.createdAt)))
         .width('100%')
         .fontSize(10.5)
         .fontColor(Tokens.muted)
@@ -2702,7 +3288,7 @@ struct Index {
         .fontColor(Tokens.ink)
         .letterSpacing(-1)
         .margin({ top: 14 })
-      Text(this.t('lastReview', formatShort(this.reviewItem.lastReviewedAt > 0 ? this.reviewItem.lastReviewedAt : this.reviewItem.createdAt)))
+      Text(this.t('lastReview', this.shortDate(this.reviewItem.lastReviewedAt > 0 ? this.reviewItem.lastReviewedAt : this.reviewItem.createdAt)))
         .width('100%')
         .fontSize(10.5)
         .fontColor(Tokens.muted)
@@ -2874,6 +3460,420 @@ struct Index {
     .height('100%')
   }
 
+  @Builder FocusBar() {
+    Column() {
+      Row() {
+        Circle({ width: 6, height: 6 })
+          .fill(this.focusRunning && this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
+
+        if (this.focusRunning) {
+          Text(this.focusClock())
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Tokens.ink)
+            .margin({ left: 9 })
+          Text(this.focusIsBreak ? this.t('focusBreaking') : this.t('focusCardTitle'))
+            .fontSize(10)
+            .fontColor(Tokens.muted)
+            .margin({ left: 7 })
+          Blank()
+          Text(this.focusPaused ? this.t('focusResume') : this.t('focusPause'))
+            .fontSize(11)
+            .fontColor(Tokens.inkSoft)
+            .textAlign(TextAlign.Center)
+            .height(28)
+            .padding({ left: 8, right: 8 })
+            .onClick(() => {
+              if (this.focusPaused) {
+                this.resumeFocus();
+              } else {
+                this.pauseFocus();
+              }
+            })
+          Text(this.t('focusEnd'))
+            .fontSize(11)
+            .fontColor(Tokens.coral)
+            .textAlign(TextAlign.Center)
+            .height(28)
+            .padding({ left: 8, right: 8 })
+            .onClick(() => {
+              this.stopFocusEarly();
+            })
+        } else {
+          Text(this.t('focusStart', this.settings.focusMinutes))
+            .fontSize(11.5)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#9B5C00')
+            .margin({ left: 9 })
+          Blank()
+          Text('›')
+            .fontSize(15)
+            .fontColor(Tokens.mutedSoft)
+            .margin({ right: 2 })
+        }
+      }
+      .width('100%')
+      .height(42)
+      .padding({ left: 14, right: 10 })
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        if (!this.focusRunning) {
+          this.openFocusPicker();
+        }
+      })
+
+      if (this.focusRunning) {
+        Row() {
+          Row()
+            .width(this.focusProgress() + '%')
+            .height(2)
+            .backgroundColor(this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
+        }
+        .width('100%')
+        .height(2)
+        .backgroundColor(Tokens.line)
+      }
+    }
+    .width('100%')
+    .backgroundColor(Tokens.surfaceSoft)
+    .borderRadius(14)
+    .borderWidth(1)
+    .borderColor('#A6FFC531')
+    .clip(true)
+    .margin({ bottom: 16 })
+    .translate({ x: (1 - this.todayTitleIn) * -this.mv(72) })
+    .opacity(0.3 + 0.7 * Math.min(1, this.todayTitleIn * 1.8))
+  }
+
+  @Builder FocusMiniBar() {
+    Column() {
+      Row() {
+        Circle({ width: 6, height: 6 })
+          .fill(this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
+        Text(this.focusClock())
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.ink)
+          .margin({ left: 8 })
+        Text(this.focusIsBreak ? this.t('focusBreaking') : this.t('focusCardTitle'))
+          .fontSize(9.5)
+          .fontColor(Tokens.muted)
+          .margin({ left: 6 })
+        Blank()
+        Text('›')
+          .fontSize(13)
+          .fontColor(Tokens.mutedSoft)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 14, right: 14 })
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(Tokens.surfaceSoft)
+      .borderRadius(18)
+      .borderWidth(1)
+      .borderColor('#A6FFC531')
+      .onClick(() => {
+        this.switchTab(0);
+      })
+    }
+    .width('100%')
+    .padding({ left: 20, right: 20, bottom: 8 })
+  }
+
+  @Builder FocusPickerOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Tokens.dim)
+        .backdropBlur(6)
+        .onClick(() => {
+          this.cancelFocusPicker();
+        })
+
+      Column() {
+        Text(this.t('focusTitle'))
+          .fontSize(11)
+          .fontColor(Tokens.muted)
+          .margin({ top: 12, bottom: 2 })
+
+        Row() {
+          TextPicker({ range: this.focusPickerRange, selected: this.focusPickerIndex() })
+            .width(64)
+            .height(150)
+            .defaultPickerItemHeight(34)
+            .canLoop(false)
+            .textStyle({ color: Tokens.mutedSoft, font: { size: 15 } })
+            .selectedTextStyle({ color: Tokens.ink, font: { size: 21, weight: FontWeight.Medium } })
+            .disappearTextStyle({ color: '#D8CEBA', font: { size: 13 } })
+            .onChange((value: string | string[], index: number | number[]) => {
+              this.focusPickerMinutes = 15 + (index as number) * 5;
+            })
+          Text(this.t('focusUnit'))
+            .fontSize(12)
+            .fontColor(Tokens.muted)
+            .margin({ left: 2, bottom: 2 })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+
+        Row() {
+          Text(this.t('cancel'))
+            .fontSize(12.5)
+            .fontColor(Tokens.muted)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .height(42)
+            .onClick(() => {
+              this.cancelFocusPicker();
+            })
+          Text(this.t('focusStartBtn'))
+            .fontSize(12.5)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.themeButton())
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .height(42)
+            .onClick(() => {
+              this.confirmFocusPicker();
+            })
+        }
+        .width('100%')
+        .margin({ top: 2 })
+      }
+      .width(198)
+      .padding({ top: 8, bottom: 4, left: 10, right: 10 })
+      .backgroundColor(Tokens.surface)
+      .borderRadius(22)
+      .borderWidth(1)
+      .borderColor('#CCFFFFFF')
+      .shadow({ radius: 36, color: '#24000000', offsetX: 0, offsetY: 16 })
+      .scale({ x: this.focusPickerScale, y: this.focusPickerScale })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder FocusSummaryOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Tokens.dim)
+        .backdropBlur(6)
+        .onClick(() => {
+          this.closeSummary();
+        })
+
+      Column() {
+        Text(this.summaryIsBreak ? this.t('focusBreakOver') : this.t('focusSummary'))
+          .fontSize(11)
+          .fontColor(Tokens.muted)
+          .margin({ top: 4 })
+
+        Text(this.minutesLabel(this.summaryMinutes))
+          .fontSize(this.summaryIsBreak ? 26 : 34)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.ink)
+          .letterSpacing(-0.5)
+          .margin({ top: 6 })
+
+        if (!this.summaryIsBreak) {
+          Text(this.t('focusReviewed', this.summaryItems, this.summaryRemembered))
+            .fontSize(11.5)
+            .fontColor(Tokens.inkSoft)
+            .margin({ top: 10 })
+        }
+
+        Text(this.clockLabel(this.summaryStart) + ' – ' + this.clockLabel(this.summaryEnd))
+          .fontSize(10)
+          .fontColor(Tokens.mutedSoft)
+          .margin({ top: 5 })
+
+        if (!this.summaryCompleted && !this.summaryIsBreak) {
+          Text(this.t('focusEarly'))
+            .fontSize(10)
+            .fontColor(Tokens.coral)
+            .margin({ top: 7 })
+        }
+
+        Row() {
+          Text(this.summaryIsBreak ? this.t('focusDone') : this.t('focusBreak'))
+            .fontSize(12)
+            .fontColor(Tokens.muted)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .height(44)
+            .onClick(() => {
+              if (this.summaryIsBreak) {
+                this.closeSummary();
+              } else {
+                this.startBreak();
+              }
+            })
+          Text(this.summaryIsBreak ? this.t('focusAgain') : this.t('focusDone'))
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.themeButton())
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .height(44)
+            .onClick(() => {
+              if (this.summaryIsBreak) {
+                this.startNextRound();
+              } else {
+                this.closeSummary();
+              }
+            })
+        }
+        .width('100%')
+        .margin({ top: 12 })
+      }
+      .width(244)
+      .padding({ top: 20, bottom: 2, left: 14, right: 14 })
+      .backgroundColor(Tokens.surface)
+      .borderRadius(24)
+      .borderWidth(1)
+      .borderColor('#CCFFFFFF')
+      .shadow({ radius: 36, color: '#24000000', offsetX: 0, offsetY: 16 })
+      .scale({ x: this.summaryScale, y: this.summaryScale })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder FocusWeekCard() {
+    Column() {
+      Row() {
+        Text(this.t('focusCardTitle'))
+          .fontSize(10.5)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.muted)
+        Blank()
+        Text(this.t('focusTodayTotal', this.minutesLabel(this.todayFocusMinutes()), this.todayFocusCount()))
+          .fontSize(10)
+          .fontColor(Tokens.mutedSoft)
+      }
+      .width('100%')
+
+      Row() {
+        ForEach([0, 1, 2, 3, 4, 5, 6], (index: number) => {
+          Column() {
+            Row()
+              .width('100%')
+              .height(this.weekBarHeight(this.weekFocus()[index]))
+              .backgroundColor(index === this.todayWeekIndex() ? Tokens.coral : '#E8DCC4')
+              .borderRadius(3)
+            Text(this.weekday(this.weekDayTs(index)))
+              .fontSize(8)
+              .fontColor(index === this.todayWeekIndex() ? Tokens.coral : Tokens.mutedSoft)
+              .margin({ top: 5 })
+          }
+          .layoutWeight(1)
+          .height(54)
+          .padding({ left: 3, right: 3 })
+          .justifyContent(FlexAlign.End)
+          .alignItems(HorizontalAlign.Center)
+        }, (index: number) => 'w' + index)
+      }
+      .width('100%')
+      .height(54)
+      .margin({ top: 10 })
+      .alignItems(VerticalAlign.Bottom)
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 14, bottom: 10 })
+    .backgroundColor(Tokens.surfaceSoft)
+    .borderRadius(18)
+    .borderWidth(1)
+    .borderColor('#B3FFFFFF')
+    .margin({ bottom: 18 })
+  }
+
+  @Builder TimePickerOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Tokens.dim)
+        .backdropBlur(6)
+        .onClick(() => {
+          this.cancelTimePicker();
+        })
+
+      Column() {
+        Row() {
+          TextPicker({ range: this.hourRange, selected: this.pickerHour })
+            .width(58)
+            .height(150)
+            .defaultPickerItemHeight(34)
+            .canLoop(false)
+            .textStyle({ color: Tokens.mutedSoft, font: { size: 15 } })
+            .selectedTextStyle({ color: Tokens.ink, font: { size: 21, weight: FontWeight.Medium } })
+            .disappearTextStyle({ color: '#D8CEBA', font: { size: 13 } })
+            .onChange((value: string | string[], index: number | number[]) => {
+              this.pickerHour = index as number;
+            })
+
+          Text(':')
+            .fontSize(19)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Tokens.ink)
+            .margin({ left: 3, right: 3 })
+
+          TextPicker({ range: this.minuteRange, selected: this.pickerMinute })
+            .width(58)
+            .height(150)
+            .defaultPickerItemHeight(34)
+            .canLoop(false)
+            .textStyle({ color: Tokens.mutedSoft, font: { size: 15 } })
+            .selectedTextStyle({ color: Tokens.ink, font: { size: 21, weight: FontWeight.Medium } })
+            .disappearTextStyle({ color: '#D8CEBA', font: { size: 13 } })
+            .onChange((value: string | string[], index: number | number[]) => {
+              this.pickerMinute = index as number;
+            })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+
+        Row() {
+          Text(this.t('cancel'))
+            .fontSize(12.5)
+            .fontColor(Tokens.muted)
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .height(42)
+            .onClick(() => {
+              this.cancelTimePicker();
+            })
+          Text(this.t('confirm'))
+            .fontSize(12.5)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.themeButton())
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+            .height(42)
+            .onClick(() => {
+              this.confirmTimePicker();
+            })
+        }
+        .width('100%')
+        .margin({ top: 2 })
+      }
+      .width(198)
+      .padding({ top: 8, bottom: 4, left: 10, right: 10 })
+      .backgroundColor(Tokens.surface)
+      .borderRadius(22)
+      .borderWidth(1)
+      .borderColor('#CCFFFFFF')
+      .shadow({ radius: 36, color: '#24000000', offsetX: 0, offsetY: 16 })
+      .scale({ x: this.timePickerScale, y: this.timePickerScale })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
   @Builder ItemActionsOverlay() {
     Stack({ alignContent: Alignment.Center }) {
       Column()
@@ -2913,7 +3913,7 @@ struct Index {
           .width('100%')
           .margin({ top: 16 })
 
-        Text(this.findSubject(this.actionItem.subjectId).name + '  ·  ' + this.t('next') + ' ' + formatShort(this.actionItem.nextReviewAt))
+        Text(this.findSubject(this.actionItem.subjectId).name + '  ·  ' + this.t('next') + ' ' + this.shortDate(this.actionItem.nextReviewAt))
           .fontSize(10)
           .fontColor(Tokens.muted)
           .width('100%')
@@ -2924,7 +3924,7 @@ struct Index {
             Text(this.t('created'))
               .fontSize(8)
               .fontColor(Tokens.mutedSoft)
-            Text(formatShort(this.actionItem.createdAt))
+            Text(this.shortDate(this.actionItem.createdAt))
               .fontSize(11)
               .fontColor(Tokens.inkSoft)
               .margin({ top: 3 })

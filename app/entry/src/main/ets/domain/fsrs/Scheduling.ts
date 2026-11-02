@@ -2,6 +2,9 @@ import { FsrsPreview, FsrsState, preview, review } from './Fsrs.ts';
 
 const DAY_MS: number = 86400000;
 
+/** 逾期超过「计划间隔 × 这个系数」后，多出来的部分不再计入 FSRS */
+const OVERDUE_SLACK: number = 1.5;
+
 export interface SchedulingItem {
   id: string;
   subjectId: string;
@@ -95,7 +98,16 @@ function elapsedDays(item: SchedulingItem, now: number): number {
   if (!isFiniteNumber(item.lastReviewedAt) || item.lastReviewedAt <= 0) {
     return 0;
   }
-  return Math.max(0, Math.round((startOfDay(now) - startOfDay(item.lastReviewedAt)) / DAY_MS));
+  const raw = Math.max(0, Math.round((startOfDay(now) - startOfDay(item.lastReviewedAt)) / DAY_MS));
+  // 逾期奖励封顶：交给 FSRS 的「晚了多久」最多按计划间隔的 1.5 倍算，
+  // 否则拖得越久、点「记得」排得越远，攒了一堆最后照着答案点的人反而被奖励。
+  const planned = isFiniteNumber(item.fsrsScheduledDays) && item.fsrsScheduledDays > 0
+    ? item.fsrsScheduledDays
+    : (isFiniteNumber(item.currentIntervalDays) ? item.currentIntervalDays : 0);
+  if (planned <= 0) {
+    return raw;
+  }
+  return Math.min(raw, Math.round(planned * OVERDUE_SLACK));
 }
 
 export function fsrsStateFromItem(item: SchedulingItem): FsrsState {
@@ -146,15 +158,24 @@ export function fixedIntervalFor(item: SchedulingItem, grade: number): number {
   return base;
 }
 
+/** 最长间隔：0 或非有限值表示不限 */
+function capInterval(days: number, maxIntervalDays?: number): number {
+  if (maxIntervalDays === undefined || !isFiniteNumber(maxIntervalDays) || maxIntervalDays <= 0) {
+    return days;
+  }
+  return Math.min(days, Math.max(1, Math.round(maxIntervalDays)));
+}
+
 export function scheduleFsrs(
   item: SchedulingItem,
   grade: number,
   now: number,
-  retention: number
+  retention: number,
+  maxIntervalDays?: number
 ): FsrsScheduleResult {
   const safe = safeGrade(grade);
   if (item.scheduleMode === 'fixed') {
-    const days = fixedIntervalFor(item, safe);
+    const days = capInterval(fixedIntervalFor(item, safe), maxIntervalDays);
     return {
       nextAt: nextDueAt(now, days),
       nextIntervalDays: days,
@@ -169,7 +190,7 @@ export function scheduleFsrs(
   }
   const state = fsrsStateFromItem(item);
   const reviewed = review(state, safe, elapsedDays(item, now), safeRetention(retention), now);
-  const days = safeDays(reviewed.scheduledDays);
+  const days = capInterval(safeDays(reviewed.scheduledDays), maxIntervalDays);
   return {
     nextAt: nextDueAt(now, days),
     nextIntervalDays: days,
@@ -183,11 +204,16 @@ export function scheduleFsrs(
   };
 }
 
-export function previewForGrades(item: SchedulingItem, now: number, retention: number): number[] {
+export function previewForGrades(
+  item: SchedulingItem,
+  now: number,
+  retention: number,
+  maxIntervalDays?: number
+): number[] {
   if (item.scheduleMode === 'fixed') {
     const result: number[] = [];
     for (let grade = 1; grade <= 4; grade++) {
-      result.push(fixedIntervalFor(item, grade));
+      result.push(capInterval(fixedIntervalFor(item, grade), maxIntervalDays));
     }
     return result;
   }
@@ -195,7 +221,7 @@ export function previewForGrades(item: SchedulingItem, now: number, retention: n
   const previews: FsrsPreview[] = preview(state, elapsedDays(item, now), safeRetention(retention), now);
   const intervals: number[] = [];
   for (let i = 0; i < previews.length; i++) {
-    intervals.push(safeDays(previews[i].intervalDays));
+    intervals.push(capInterval(safeDays(previews[i].intervalDays), maxIntervalDays));
   }
   return intervals;
 }

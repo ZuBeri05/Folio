@@ -24,33 +24,51 @@ export class Store {
       if (typeof parsed.settings.language !== 'string') {
         parsed.settings.language = 'zh';
       }
-      for (let i = 0; i < parsed.subjects.length; i++) {
-        const subject = parsed.subjects[i];
-        if (subject.id === 'math') {
-          subject.color = '#E8A21A';
-        } else if (subject.id === 'english') {
-          subject.color = '#4A90D9';
-        } else if (subject.id === 'physics') {
-          subject.color = '#8E7CC3';
-        } else if (subject.id === 'chinese') {
-          subject.color = '#D95F3F';
-        }
+      if (typeof parsed.settings.maxIntervalDays !== 'number') {
+        // 老数据没有这一项，按新默认 180 天补齐；0 表示不限
+        parsed.settings.maxIntervalDays = 180;
       }
-      let hasPolitics = false;
-      let hasMajor = false;
-      for (let i = 0; i < parsed.subjects.length; i++) {
-        if (parsed.subjects[i].name === '政治') {
-          hasPolitics = true;
-        }
-        if (parsed.subjects[i].name === '专业课') {
-          hasMajor = true;
-        }
+      if (typeof parsed.settings.focusMinutes !== 'number' || parsed.settings.focusMinutes < 1) {
+        parsed.settings.focusMinutes = 25;
       }
-      if (!hasPolitics) {
-        parsed.subjects.push({ id: 'politics', name: '政治', color: '#D95F3F' });
+      if (!Array.isArray(parsed.focusSessions)) {
+        parsed.focusSessions = [];
       }
-      if (!hasMajor) {
-        parsed.subjects.push({ id: 'major', name: '专业课', color: '#8E7CC3' });
+      if (parsed.activeFocus === undefined || parsed.activeFocus === null) {
+        parsed.activeFocus = null;
+      }
+      // 旧结构（schemaVersion < 2）用的是旧色板和旧科目名，迁移前补一次「政治 / 专业课」。
+      // 新结构不再补：用户删掉的科目不能每次启动都复活。
+      const legacy = typeof parsed.schemaVersion !== 'number' || parsed.schemaVersion < 2;
+      if (legacy) {
+        for (let i = 0; i < parsed.subjects.length; i++) {
+          const subject = parsed.subjects[i];
+          if (subject.id === 'math') {
+            subject.color = '#E8A21A';
+          } else if (subject.id === 'english') {
+            subject.color = '#4A90D9';
+          } else if (subject.id === 'physics') {
+            subject.color = '#8E7CC3';
+          } else if (subject.id === 'chinese') {
+            subject.color = '#D95F3F';
+          }
+        }
+        let hasPolitics = false;
+        let hasMajor = false;
+        for (let i = 0; i < parsed.subjects.length; i++) {
+          if (parsed.subjects[i].name === '政治') {
+            hasPolitics = true;
+          }
+          if (parsed.subjects[i].name === '专业课') {
+            hasMajor = true;
+          }
+        }
+        if (!hasPolitics) {
+          parsed.subjects.push({ id: 'politics', name: '政治', color: '#D95F3F' });
+        }
+        if (!hasMajor) {
+          parsed.subjects.push({ id: 'major', name: '专业课', color: '#8E7CC3' });
+        }
       }
       try {
         if (needsMigration(parsed)) {

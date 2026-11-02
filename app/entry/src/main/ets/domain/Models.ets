@@ -66,6 +66,18 @@ export interface SubjectTime {
   time: string;
 }
 
+/** 一段专注（番茄钟） */
+export interface FocusSession {
+  id: string;
+  startedAt: number;
+  endedAt: number;
+  plannedMinutes: number;
+  minutes: number;
+  itemCount: number;
+  remembered: number;
+  completed: boolean;
+}
+
 export interface Settings {
   reminderEnabled: boolean;
   reminderTime: string;
@@ -73,6 +85,10 @@ export interface Settings {
   themeIndex: number;
   language: string;
   targetRetention: number;
+  /** 最长间隔（天），0 表示不限 */
+  maxIntervalDays: number;
+  /** 上次选的专注时长（分钟） */
+  focusMinutes: number;
 }
 
 export interface AppData {
@@ -81,6 +97,9 @@ export interface AppData {
   items: StudyItem[];
   logs: ReviewLog[];
   settings: Settings;
+  focusSessions: FocusSession[];
+  /** 正在跑的专注，App 被关掉后靠它恢复 */
+  activeFocus: FocusSession | null;
 }
 
 export interface ReviewResult {
@@ -140,7 +159,11 @@ export function createDefaultData(): AppData {
       subjectTimes: [],
       themeIndex: 0,
       language: 'zh',
-      targetRetention: 0.9
-    }
+      targetRetention: 0.9,
+      maxIntervalDays: 180,
+      focusMinutes: 25
+    },
+    focusSessions: [],
+    activeFocus: null
   };
 }

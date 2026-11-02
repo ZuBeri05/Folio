@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { review } from '../app/entry/src/main/ets/domain/fsrs/Fsrs.ts';
 import {
   fixedIntervalFor,
   fsrsStateFromItem,
@@ -77,6 +78,77 @@ describe('FSRS scheduling adapter', () => {
       expect(intervals[i]).toBeGreaterThanOrEqual(1);
     }
     expect(intervals[3]).toBeGreaterThanOrEqual(intervals[0]);
+  });
+
+  it('caps the overdue bonus at 1.5x the planned interval', () => {
+    const now = new Date(2026, 9, 22, 22, 30).getTime();
+    const day = 86400000;
+    const base = {
+      ...reviewedItem,
+      reviewCount: 3,
+      fsrsStability: 10,
+      fsrsDifficulty: 5,
+      fsrsScheduledDays: 10
+    };
+    const at = (daysAgo: number) => scheduleFsrs(
+      { ...base, lastReviewedAt: now - daysAgo * day } as any, 3, now, 0.9
+    ).nextIntervalDays;
+
+    const onTime = at(10);
+    const threeLate = at(13);
+    const fifteenLate = at(25);
+    const sixtyLate = at(70);
+
+    // 轻微逾期照常给奖励
+    expect(threeLate).toBeGreaterThan(onTime);
+    // 逾期超过 1.5 个周期后完全饱和：再晚也一样
+    expect(sixtyLate).toBe(fifteenLate);
+    // 饱和值仍然比按时复习宽松，但比不封顶时短
+    expect(sixtyLate).toBeGreaterThan(onTime);
+    const state = fsrsStateFromItem(base as any);
+    const unclamped = Math.max(1, Math.round(review(state, 3, 60, 0.9, now).scheduledDays));
+    expect(sixtyLate).toBeLessThan(unclamped);
+  });
+
+  it('caps the interval at the configured maximum', () => {
+    const now = new Date(2026, 9, 22, 22, 30).getTime();
+    const day = 86400000;
+    const item = {
+      ...reviewedItem,
+      reviewCount: 4,
+      fsrsStability: 200,
+      fsrsDifficulty: 5,
+      fsrsScheduledDays: 200,
+      lastReviewedAt: now - 200 * day
+    };
+
+    const uncapped = scheduleFsrs(item as any, 3, now, 0.9).nextIntervalDays;
+    expect(uncapped).toBeGreaterThan(180);
+
+    const capped = scheduleFsrs(item as any, 3, now, 0.9, 180).nextIntervalDays;
+    expect(capped).toBe(180);
+    expect(capped).toBeLessThan(uncapped);
+
+    // 预览里的四个按钮也要一起夹住，否则点了才发现和显示的不一样
+    const previews = previewForGrades(item as any, now, 0.9, 90);
+    for (let i = 0; i < previews.length; i++) {
+      expect(previews[i]).toBeLessThanOrEqual(90);
+    }
+  });
+
+  it('treats zero or invalid maximum interval as unlimited', () => {
+    const now = new Date(2026, 9, 22, 22, 30).getTime();
+    const day = 86400000;
+    const item = {
+      ...reviewedItem,
+      reviewCount: 4,
+      fsrsStability: 200,
+      fsrsScheduledDays: 200,
+      lastReviewedAt: now - 200 * day
+    };
+    const uncapped = scheduleFsrs(item as any, 3, now, 0.9).nextIntervalDays;
+    expect(scheduleFsrs(item as any, 3, now, 0.9, 0).nextIntervalDays).toBe(uncapped);
+    expect(scheduleFsrs(item as any, 3, now, 0.9, NaN).nextIntervalDays).toBe(uncapped);
   });
 
   it('preserves stored FSRS state for reviewed items marked new', () => {

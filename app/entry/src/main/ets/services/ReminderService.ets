@@ -24,6 +24,13 @@ export class ReminderService {
     displayName: '结绳复习'
   };
 
+  /** 专注结束的提醒单独一个日历，免得被每日提醒的 sync() 顺手清掉 */
+  private static focusAccount: calendarManager.CalendarAccount = {
+    name: 'JieshengFocus',
+    type: calendarManager.CalendarType.LOCAL,
+    displayName: '专注计时'
+  };
+
   private static config: calendarManager.CalendarConfig = {
     enableReminder: true,
     color: '#FFC531'
@@ -94,12 +101,46 @@ export class ReminderService {
   }
 
   private static async getCalendar(context: common.UIAbilityContext): Promise<calendarManager.Calendar> {
+    return ReminderService.getCalendarFor(context, ReminderService.account);
+  }
+
+  /** 专注结束时提醒一次；App 在后台、锁屏也能收到 */
+  static async scheduleFocusEnd(context: common.UIAbilityContext, endAt: number, minutes: number): Promise<void> {
+    try {
+      await ReminderService.requestCalendarPermission(context);
+      const calendar = await ReminderService.getCalendarFor(context, ReminderService.focusAccount);
+      await ReminderService.clearEvents(calendar);
+      const event: calendarManager.Event = {
+        title: 'Folio · 专注结束',
+        description: '专注 ' + minutes + ' 分钟到点了，回来看看复习进度。',
+        type: calendarManager.EventType.NORMAL,
+        startTime: endAt,
+        endTime: endAt + 5 * 60 * 1000,
+        reminderTime: [0]
+      };
+      await calendar.addEvent(event);
+    } catch (error) {
+      // 没有日历权限就只靠应用内计时，不影响功能
+    }
+  }
+
+  static async clearFocusEnd(context: common.UIAbilityContext): Promise<void> {
+    try {
+      const calendar = await ReminderService.getCalendarFor(context, ReminderService.focusAccount);
+      await ReminderService.clearEvents(calendar);
+    } catch (error) {
+      // 没权限或还没建过日历，什么都不用做
+    }
+  }
+
+  private static async getCalendarFor(context: common.UIAbilityContext,
+    account: calendarManager.CalendarAccount): Promise<calendarManager.Calendar> {
     const manager = calendarManager.getCalendarManager(context);
     let calendar: calendarManager.Calendar;
     try {
-      calendar = await manager.getCalendar(ReminderService.account);
+      calendar = await manager.getCalendar(account);
     } catch (error) {
-      calendar = await manager.createCalendar(ReminderService.account);
+      calendar = await manager.createCalendar(account);
     }
     try {
       await calendar.setConfig(ReminderService.config);

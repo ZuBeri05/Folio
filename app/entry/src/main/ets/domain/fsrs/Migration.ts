@@ -59,10 +59,25 @@ export interface LegacySettings {
   subjectTimes: LegacySubjectTime[];
   themeIndex: number;
   language: string;
+  maxIntervalDays?: number;
+  focusMinutes?: number;
 }
 
 export interface MigratedSettings extends LegacySettings {
   targetRetention: number;
+  maxIntervalDays: number;
+  focusMinutes: number;
+}
+
+export interface LegacyFocusSession {
+  id: string;
+  startedAt: number;
+  endedAt: number;
+  plannedMinutes: number;
+  minutes: number;
+  itemCount: number;
+  remembered: number;
+  completed: boolean;
 }
 
 export interface LegacyAppData {
@@ -70,6 +85,8 @@ export interface LegacyAppData {
   items: LegacyStudyItem[];
   logs: LegacyReviewLog[];
   settings: LegacySettings;
+  focusSessions?: LegacyFocusSession[];
+  activeFocus?: LegacyFocusSession | null;
 }
 
 export interface MigratedAppData {
@@ -78,6 +95,8 @@ export interface MigratedAppData {
   items: MigratedStudyItem[];
   logs: MigratedReviewLog[];
   settings: MigratedSettings;
+  focusSessions: LegacyFocusSession[];
+  activeFocus: LegacyFocusSession | null;
 }
 
 function isFiniteNumber(value: number): boolean {
@@ -263,7 +282,11 @@ function migrateSettings(settings: LegacySettings): MigratedSettings {
     subjectTimes: settings.subjectTimes,
     themeIndex: settings.themeIndex,
     language: settings.language,
-    targetRetention: isValidTargetRetention(candidate.targetRetention) ? candidate.targetRetention : 0.90
+    targetRetention: isValidTargetRetention(candidate.targetRetention) ? candidate.targetRetention : 0.90,
+    maxIntervalDays: isFiniteNumber(candidate.maxIntervalDays) ? candidate.maxIntervalDays : 180,
+    focusMinutes: isFiniteNumber(candidate.focusMinutes) && candidate.focusMinutes > 0
+      ? candidate.focusMinutes
+      : 25
   };
 }
 
@@ -275,6 +298,8 @@ export function migrateAppData(data: LegacyAppData): MigratedAppData {
     subjects: data.subjects,
     items: items,
     logs: logs,
-    settings: migrateSettings(data.settings)
+    settings: migrateSettings(data.settings),
+    focusSessions: Array.isArray(data.focusSessions) ? data.focusSessions : [],
+    activeFocus: data.activeFocus ? data.activeFocus : null
   };
 }
