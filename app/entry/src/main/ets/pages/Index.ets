@@ -1166,13 +1166,43 @@ struct Index {
     });
   }
 
-  private focusProgress(): number {
+  /** 环上还剩多少（0–100）：整圈开始，随时间往回缩 */
+  private focusRemainingPercent(): number {
     const total = this.focusPlannedMinutes * 60000;
     if (total <= 0) {
+      return 100;
+    }
+    const left = Math.max(0, Math.min(total, this.focusRemainingMs));
+    return left / total * 100;
+  }
+
+  /** 这一轮多少分钟就画多少个刻度 */
+  private tickCount(): number {
+    const minutes = this.focusRunning ? this.focusPlannedMinutes : this.settings.focusMinutes;
+    return Math.max(1, Math.min(90, Math.round(minutes)));
+  }
+
+  private minuteTicks(): number[] {
+    const out: number[] = [];
+    const count = this.tickCount();
+    for (let i = 0; i < count; i++) {
+      out.push(i);
+    }
+    return out;
+  }
+
+  /** 已经走完的分钟数 */
+  private elapsedMinutes(): number {
+    if (!this.focusRunning) {
       return 0;
     }
-    const done = total - this.focusRemainingMs;
-    return Math.min(100, Math.max(0, Math.round(done / total * 100)));
+    const total = this.focusPlannedMinutes * 60000;
+    const passed = Math.floor((total - Math.max(0, this.focusRemainingMs)) / 60000);
+    return Math.max(0, Math.min(this.tickCount(), passed));
+  }
+
+  private tickOpacity(index: number): number {
+    return index < this.elapsedMinutes() ? 0.14 : 0.55;
   }
 
   private focusClock(): string {
@@ -1194,9 +1224,12 @@ struct Index {
     return formatClock(Math.max(0, total - this.focusRemainingMs));
   }
 
-  /** 专注珊瑚、休息蓝、暂停灰 */
+  /** 专注珊瑚、休息蓝、暂停灰；还没开始时浅一点，整圈就是整段时长 */
   private clockAccent(): string {
-    if (this.focusRunning && this.focusPaused) {
+    if (!this.focusRunning) {
+      return '#FFC4B2';
+    }
+    if (this.focusPaused) {
       return Tokens.mutedSoft;
     }
     return this.focusIsBreak ? Tokens.blue : Tokens.coral;
@@ -2952,7 +2985,7 @@ struct Index {
           .margin({ top: 16, bottom: 14 })
 
         // 番茄钟一轮多长；大圆盘上不再调，统一在这儿改
-        Text(this.t('focusTitle'))
+        Text(this.t('focusSettingTitle'))
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.ink)
@@ -3619,7 +3652,7 @@ struct Index {
 
       Stack({ alignContent: Alignment.Center }) {
         Progress({
-          value: this.focusRunning ? this.focusProgress() : 0,
+          value: this.focusRunning ? this.focusRemainingPercent() : 100,
           total: 100,
           type: ProgressType.Ring
         })
@@ -3628,6 +3661,22 @@ struct Index {
           .color(this.clockAccent())
           .backgroundColor('#2E5E4B30')
           .style({ strokeWidth: Math.max(9, this.clockSize() * 0.032), enableSmoothEffect: true })
+
+        // 一圈一格一分钟：走过的那些淡下去，剩下的跟着圆弧一起减少
+        ForEach(this.minuteTicks(), (index: number) => {
+          Column() {
+            Row()
+              .width(Math.max(2, this.clockSize() * 0.008))
+              .height(Math.max(4, this.clockSize() * 0.02))
+              .borderRadius(2)
+              .backgroundColor(this.clockAccent())
+              .opacity(this.tickOpacity(index))
+            Blank()
+          }
+          .width(this.clockSize() * 0.9)
+          .height(this.clockSize() * 0.9)
+          .rotate({ angle: index * 360 / this.tickCount() })
+        }, (index: number) => '' + index)
 
         Column() {
           Image($r('app.media.tomato'))
