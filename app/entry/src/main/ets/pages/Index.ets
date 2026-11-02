@@ -4,7 +4,7 @@ import { AppData, Subject, StudyItem, ReviewLog, Settings, DayCount, FocusSessio
 import { Store } from '../data/Store';
 import { scheduleFsrs, previewForGrades, postponeToTomorrow, startOfDay, addDays, daysBetween } from '../domain/Scheduling';
 import { fsrsStateFromItem } from '../domain/fsrs/Scheduling.ts';
-import { formatClock, durationParts, summarize, todayCount, todayMinutes, weekBuckets } from '../domain/focus/Focus';
+import { formatClock, durationParts, summarize, todayCount, todayMinutes, weekBuckets, breakMinutesFor, cycleSummary } from '../domain/focus/Focus';
 import { ReminderService } from '../services/ReminderService';
 import { FocusAlert } from '../services/FocusAlert';
 import { Tokens, Motion } from '../theme/Tokens';
@@ -102,23 +102,24 @@ struct Index {
   @State focusStartedAt: number = 0;
   @State focusRemainingMs: number = 0;
   @State focusPlannedMinutes: number = 25;
-  @State showFocusPicker: boolean = false;
-  @State focusPickerScale: number = 1;
-  @State focusPickerMinutes: number = 25;
+  /** 循环里第几轮，从 1 开始 */
+  @State focusRound: number = 1;
+  /** 这一轮循环是什么时候开始的，用来算小结里的累计 */
+  @State focusCycleStart: number = 0;
+  /** 大圆盘上还没开始时选的时长 */
+  @State focusMinutesDraft: number = 30;
   @State showFocusSummary: boolean = false;
   @State summaryScale: number = 1;
   @State summaryMinutes: number = 0;
+  @State summarySegments: number = 0;
   @State summaryItems: number = 0;
   @State summaryRemembered: number = 0;
-  @State summaryCompleted: boolean = true;
   @State summaryStart: number = 0;
   @State summaryEnd: number = 0;
-  @State summaryIsBreak: boolean = false;
   @State showFocusClock: boolean = false;
   @State clockScale: number = 1;
   private focusTimer: number = -1;
   private focusPausedRemaining: number = 0;
-  private focusPickerRange: string[] = [];
   private hourRange: string[] = [];
   private minuteRange: string[] = [];
   private reviewBusy: boolean = false;
@@ -164,9 +165,6 @@ struct Index {
     for (let i = 0; i < 60; i++) {
       this.minuteRange.push(i < 10 ? '0' + i : '' + i);
     }
-    for (let i = 15; i <= 90; i += 5) {
-      this.focusPickerRange.push('' + i);
-    }
     const now = new Date();
     this.todayLabel = this.longDate(now.getTime()) + '  ·  ' + this.weekday(now.getTime());
     this.loadData();
@@ -202,7 +200,7 @@ struct Index {
     this.settings = data.settings;
     this.focusSessions = data.focusSessions;
     this.focusPlannedMinutes = this.settings.focusMinutes;
-    this.focusPickerMinutes = this.settings.focusMinutes;
+    this.focusMinutesDraft = this.settings.focusMinutes;
     this.todayLabel = this.localizedToday();
     this.restoreFocus(data.activeFocus);
     this.syncSystemBars();
@@ -909,35 +907,51 @@ struct Index {
 
   // ---------------- 专注计时 ----------------
 
-  private openFocusPicker(): void {
+  private openFocusClock(): void {
+    this.clockScale = 0.94;
+    this.showFocusClock = true;
     if (this.focusRunning) {
-      return;
+      this.setKeepScreenOn(true);
     }
-    this.focusPickerMinutes = this.settings.focusMinutes;
-    this.showFocusPicker = true;
-    this.focusPickerScale = 0.94;
-    animateTo({ curve: Motion.snap() }, () => {
-      this.focusPickerScale = 1;
+    animateTo({ curve: Motion.settle() }, () => {
+      this.clockScale = 1;
     });
   }
 
-  private cancelFocusPicker(): void {
-    this.showFocusPicker = false;
+  private closeFocusClock(): void {
+    if (!this.showFocusClock) {
+      return;
+    }
+    this.showFocusClock = false;
+    this.setKeepScreenOn(false);
   }
 
-  private confirmFocusPicker(): void {
-    this.showFocusPicker = false;
-    this.startFocus(this.focusPickerMinutes);
+  private setKeepScreenOn(on: boolean): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    window.getLastWindow(context).then((win: window.Window) => {
+      win.setWindowKeepScreenOn(on).catch(() => {
+      });
+    }).catch(() => {
+    });
   }
 
-  private focusPickerIndex(): number {
-    const index = Math.round((this.focusPickerMinutes - 15) / 5);
-    return Math.min(this.focusPickerRange.length - 1, Math.max(0, index));
+  /** 大圆盘上还没开始时调时长，5 分钟一档 */
+  private stepFocusDraft(delta: number): void {
+    const next = this.focusMinutesDraft + delta * 5;
+    this.focusMinutesDraft = Math.min(90, Math.max(15, next));
   }
 
-  private startFocus(minutes: number): void {
-    const safe = Math.min(90, Math.max(5, Math.round(minutes)));
-    this.focusIsBreak = false;
+  /** 从大圆盘点开始：起一轮新的番茄循环 */
+  private startCycle(): void {
+    this.focusCycleStart = Date.now();
+    this.focusRound = 1;
+    this.rememberFocusMinutes(this.focusMinutesDraft);
+    this.startSegment(this.focusMinutesDraft, false);
+  }
+
+  private startSegment(minutes: number, isBreak: boolean): void {
+    const safe = Math.min(90, Math.max(1, Math.round(minutes)));
+    this.focusIsBreak = isBreak;
     this.focusPaused = false;
     this.focusRunning = true;
     this.focusPlannedMinutes = safe;
@@ -946,16 +960,15 @@ struct Index {
     this.focusRemainingMs = safe * 60000;
     this.focusPausedRemaining = 0;
     this.beginFocusTick();
-    this.rememberFocusMinutes(safe);
     this.persist();
     this.scheduleFocusAlarm(safe);
     FocusAlert.prepare(getContext(this) as common.UIAbilityContext);
   }
 
   /** 到点了响一声，和消息通知一样；手动结束就不打扰 */
-  private ringFocusEnd(wasBreak: boolean, minutes: number): void {
+  private ringFocusEnd(wasBreak: boolean, minutes: number, round: number): void {
     const title = wasBreak ? this.t('focusBreakOver') : this.t('focusSummary');
-    const text = wasBreak ? this.t('focusBreakBody') : this.t('focusNotifyBody', String(minutes));
+    const text = wasBreak ? this.t('focusNotifyNext', String(round)) : this.t('focusNotifyRest', String(minutes));
     FocusAlert.ring(title, text);
   }
 
@@ -996,7 +1009,7 @@ struct Index {
     const left = this.focusEndAt - Date.now();
     this.focusRemainingMs = left > 0 ? left : 0;
     if (left <= 0) {
-      this.finishFocus(true);
+      this.finishSegment(true);
     }
   }
 
@@ -1025,10 +1038,14 @@ struct Index {
     if (!this.focusRunning) {
       return;
     }
-    this.finishFocus(false);
+    this.finishSegment(false);
   }
 
-  private finishFocus(completed: boolean, endOverride?: number): void {
+  /**
+   * 收一段：专注走完自动进休息，休息走完自动进下一轮专注，一直转到手动结束。
+   * autoContinue 为 false 时只结算、不续上（冷启动发现已经过点了）。
+   */
+  private finishSegment(completed: boolean, endOverride?: number, autoContinue: boolean = true): void {
     if (!this.focusRunning) {
       return;
     }
@@ -1036,39 +1053,26 @@ struct Index {
     const endedAt = endOverride !== undefined ? endOverride : Date.now();
     const wasBreak = this.focusIsBreak;
     const planned = this.focusPlannedMinutes;
+    const round = this.focusRound;
     this.stopFocusTick();
     this.focusRunning = false;
     this.focusPaused = false;
     this.focusIsBreak = false;
     this.focusRemainingMs = 0;
     this.clearFocusAlarm();
-    this.closeFocusClock();
 
     if (wasBreak) {
-      this.summaryIsBreak = true;
-      this.summaryMinutes = Math.max(1, Math.round((endedAt - startedAt) / 60000));
-      this.summaryItems = 0;
-      this.summaryRemembered = 0;
-      this.summaryCompleted = completed;
-      this.summaryStart = startedAt;
-      this.summaryEnd = endedAt;
-      this.persist();
-      if (completed) {
-        this.ringFocusEnd(true, this.summaryMinutes);
+      if (completed && autoContinue) {
+        this.ringFocusEnd(true, 0, round + 1);
+        this.focusRound = round + 1;
+        this.startSegment(this.settings.focusMinutes, false);
+        return;
       }
-      this.showSummary();
+      this.endCycle(endedAt);
       return;
     }
 
     const summary = summarize(startedAt, endedAt, this.logs);
-    this.summaryIsBreak = false;
-    this.summaryMinutes = summary.minutes;
-    this.summaryItems = summary.itemCount;
-    this.summaryRemembered = summary.remembered;
-    this.summaryCompleted = completed;
-    this.summaryStart = startedAt;
-    this.summaryEnd = endedAt;
-
     if (summary.minutes >= 1) {
       const session: FocusSession = {
         id: newId(),
@@ -1081,15 +1085,38 @@ struct Index {
         completed: completed
       };
       this.focusSessions = this.focusSessions.concat([session]);
-      this.persist();
-      if (completed) {
-        this.ringFocusEnd(false, summary.minutes);
-      }
-      this.showSummary();
-    } else {
-      this.persist();
-      this.toast(this.t('focusTooShort'));
     }
+    this.persist();
+
+    if (completed && autoContinue) {
+      const breakMinutes = breakMinutesFor(round);
+      this.ringFocusEnd(false, breakMinutes, round);
+      this.startSegment(breakMinutes, true);
+      return;
+    }
+
+    this.endCycle(endedAt);
+  }
+
+  /** 结束整轮循环，弹一张累计小结 */
+  private endCycle(endedAt: number): void {
+    const cycleStart = this.focusCycleStart;
+    const cycle = cycleSummary(this.focusSessions, cycleStart);
+    this.focusCycleStart = 0;
+    this.focusRound = 1;
+    this.persist();
+    this.closeFocusClock();
+    if (cycle.segments === 0) {
+      this.toast(this.t('focusTooShort'));
+      return;
+    }
+    this.summaryMinutes = cycle.minutes;
+    this.summarySegments = cycle.segments;
+    this.summaryItems = cycle.itemCount;
+    this.summaryRemembered = cycle.remembered;
+    this.summaryStart = cycleStart;
+    this.summaryEnd = endedAt;
+    this.showSummary();
   }
 
   private showSummary(): void {
@@ -1105,28 +1132,7 @@ struct Index {
     FocusAlert.clear();
   }
 
-  private startBreak(): void {
-    this.showFocusSummary = false;
-    FocusAlert.clear();
-    this.focusIsBreak = true;
-    this.focusPaused = false;
-    this.focusRunning = true;
-    this.focusPlannedMinutes = 5;
-    this.focusStartedAt = Date.now();
-    this.focusEndAt = this.focusStartedAt + 5 * 60000;
-    this.focusRemainingMs = 5 * 60000;
-    this.focusPausedRemaining = 0;
-    this.beginFocusTick();
-    this.persist();
-    this.scheduleFocusAlarm(5);
-  }
-
-  private startNextRound(): void {
-    this.showFocusSummary = false;
-    this.openFocusPicker();
-  }
-
-  /** 冷启动时把没跑完的专注接回来 */
+  /** 冷启动时把没跑完的那一段接回来 */
   private restoreFocus(active: FocusSession | null): void {
     if (active === null) {
       return;
@@ -1134,7 +1140,9 @@ struct Index {
     this.focusStartedAt = active.startedAt;
     this.focusPlannedMinutes = active.plannedMinutes;
     this.focusEndAt = active.endedAt;
-    this.focusIsBreak = false;
+    this.focusIsBreak = active.isBreak === true;
+    this.focusRound = active.round !== undefined && active.round > 0 ? active.round : 1;
+    this.focusCycleStart = active.cycleStart !== undefined ? active.cycleStart : active.startedAt;
     this.focusPaused = false;
     this.focusRunning = true;
     if (active.endedAt > Date.now()) {
@@ -1142,12 +1150,12 @@ struct Index {
       this.beginFocusTick();
       return;
     }
-    // 关掉 App 期间已经过点了：按原定结束时间结算
-    this.finishFocus(true, active.endedAt);
+    // 关掉 App 期间已经过点了：结算这一段，但不再自动续上
+    this.finishSegment(true, active.endedAt, false);
   }
 
   private currentFocusRecord(): FocusSession | null {
-    if (!this.focusRunning || this.focusIsBreak) {
+    if (!this.focusRunning) {
       return null;
     }
     return {
@@ -1158,7 +1166,10 @@ struct Index {
       minutes: 0,
       itemCount: 0,
       remembered: 0,
-      completed: false
+      completed: false,
+      isBreak: this.focusIsBreak,
+      round: this.focusRound,
+      cycleStart: this.focusCycleStart
     };
   }
 
@@ -1202,33 +1213,18 @@ struct Index {
     return formatClock(Math.max(0, total - this.focusRemainingMs));
   }
 
-  private openFocusClock(): void {
-    if (!this.focusRunning) {
-      return;
+  /** 专注珊瑚、休息蓝、暂停灰 */
+  private clockAccent(): string {
+    if (this.focusRunning && this.focusPaused) {
+      return Tokens.mutedSoft;
     }
-    this.clockScale = 0.92;
-    this.showFocusClock = true;
-    this.setKeepScreenOn(true);
-    animateTo({ curve: Motion.settle() }, () => {
-      this.clockScale = 1;
-    });
+    return this.focusIsBreak ? Tokens.blue : Tokens.coral;
   }
 
-  private closeFocusClock(): void {
-    if (!this.showFocusClock) {
-      return;
-    }
-    this.showFocusClock = false;
-    this.setKeepScreenOn(false);
-  }
-
-  private setKeepScreenOn(on: boolean): void {
-    const context = getContext(this) as common.UIAbilityContext;
-    window.getLastWindow(context).then((win: window.Window) => {
-      win.setWindowKeepScreenOn(on).catch(() => {
-      });
-    }).catch(() => {
-    });
+  /** 第 2 轮 · 专注中 */
+  private roundLabel(): string {
+    const phase = this.focusIsBreak ? this.t('focusBreaking') : this.t('focusRunning');
+    return this.t('focusRound', this.focusRound) + ' · ' + phase;
   }
 
   /** 25 分钟 / 1 小时 15 分 */
@@ -1798,9 +1794,6 @@ struct Index {
       if (this.showTimePicker) {
         this.TimePickerOverlay()
       }
-      if (this.showFocusPicker) {
-        this.FocusPickerOverlay()
-      }
       if (this.showFocusClock) {
         this.FocusClockOverlay()
       }
@@ -1921,6 +1914,21 @@ struct Index {
         .fontSize(12)
         .fontColor(Tokens.muted)
       Blank()
+      Stack() {
+        Image($r('app.media.tomato'))
+          .width(20)
+          .height(20)
+      }
+      .width(34)
+      .height(34)
+      .borderRadius(17)
+      .backgroundColor('#FFEDE6')
+      .borderWidth(1)
+      .borderColor('#40FF6542')
+      .margin({ right: showAdd ? 8 : 0 })
+      .onClick(() => {
+        this.openFocusClock();
+      })
       if (showAdd) {
         Button(this.t('newEntry'))
           .height(34)
@@ -3562,11 +3570,7 @@ struct Index {
         .height('100%')
         .layoutWeight(1)
         .onClick(() => {
-          if (this.focusRunning) {
-            this.openFocusClock();
-          } else {
-            this.openFocusPicker();
-          }
+          this.openFocusClock();
         })
 
         if (this.focusRunning) {
@@ -3664,7 +3668,7 @@ struct Index {
     .padding({ left: 20, right: 20, bottom: 8 })
   }
 
-  /** 整页的番茄钟：一个圆盘 + 大号倒计时，放在桌边抬头就能看 */
+  /** 整页的番茄钟：没开始时选时长，跑起来就是循环里的那一段 */
   @Builder FocusClockOverlay() {
     Column() {
       Row() {
@@ -3686,10 +3690,14 @@ struct Index {
       Blank()
 
       Stack({ alignContent: Alignment.Center }) {
-        Progress({ value: this.focusProgress(), total: 100, type: ProgressType.Ring })
+        Progress({
+          value: this.focusRunning ? this.focusProgress() : 0,
+          total: 100,
+          type: ProgressType.Ring
+        })
           .width(this.clockSize())
           .height(this.clockSize())
-          .color(this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
+          .color(this.clockAccent())
           .backgroundColor('#2E5E4B30')
           .style({ strokeWidth: Math.max(9, this.clockSize() * 0.032), enableSmoothEffect: true })
 
@@ -3697,137 +3705,124 @@ struct Index {
           Image($r('app.media.tomato'))
             .width(this.clockSize() * 0.11)
             .height(this.clockSize() * 0.11)
-            .opacity(this.focusPaused ? 0.45 : 1)
-          Text(this.focusClock())
-            .fontSize(this.clockSize() * 0.26)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.focusPaused ? Tokens.muted : Tokens.ink)
-            .fontFeature('"tnum" 1')
-            .margin({ top: 8 })
-          Text(this.focusIsBreak ? this.t('focusBreaking') : this.t('focusRunning'))
-            .fontSize(Math.max(12, this.clockSize() * 0.055))
-            .fontColor(Tokens.muted)
-            .margin({ top: 6 })
+            .opacity(this.focusRunning && this.focusPaused ? 0.45 : 1)
+
+          if (this.focusRunning) {
+            Text(this.focusClock())
+              .fontSize(this.clockSize() * 0.26)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.focusPaused ? Tokens.muted : Tokens.ink)
+              .fontFeature('"tnum" 1')
+              .margin({ top: 8 })
+            Text(this.roundLabel())
+              .fontSize(Math.max(12, this.clockSize() * 0.055))
+              .fontColor(Tokens.muted)
+              .margin({ top: 6 })
+          } else {
+            Row() {
+              Text('－')
+                .fontSize(Math.max(15, this.clockSize() * 0.085))
+                .fontColor(Tokens.muted)
+                .textAlign(TextAlign.Center)
+                .width(Math.max(36, this.clockSize() * 0.16))
+                .height(Math.max(36, this.clockSize() * 0.16))
+                .borderRadius(Math.max(18, this.clockSize() * 0.08))
+                .backgroundColor(Tokens.surfaceSoft)
+                .onClick(() => {
+                  this.stepFocusDraft(-1);
+                })
+              Column() {
+                Text(this.minutesLabel(this.focusMinutesDraft))
+                  .fontSize(this.clockSize() * 0.13)
+                  .maxLines(1)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(Tokens.ink)
+                  .fontFeature('"tnum" 1')
+                Text(this.t('focusTitle'))
+                  .fontSize(Math.max(10, this.clockSize() * 0.045))
+                  .fontColor(Tokens.mutedSoft)
+                  .margin({ top: 4 })
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Center)
+              Text('＋')
+                .fontSize(Math.max(16, this.clockSize() * 0.09))
+                .fontColor(Tokens.muted)
+                .textAlign(TextAlign.Center)
+                .width(Math.max(36, this.clockSize() * 0.16))
+                .height(Math.max(36, this.clockSize() * 0.16))
+                .borderRadius(Math.max(18, this.clockSize() * 0.08))
+                .backgroundColor(Tokens.surfaceSoft)
+                .onClick(() => {
+                  this.stepFocusDraft(1);
+                })
+            }
+            .width(this.clockSize() * 0.88)
+            .alignItems(VerticalAlign.Center)
+            .margin({ top: 14 })
+          }
         }
         .alignItems(HorizontalAlign.Center)
       }
       .width(this.clockSize())
       .height(this.clockSize())
 
-      Text(this.t('focusElapsed', this.elapsedClock()) + ' · ' + this.minutesLabel(this.focusPlannedMinutes))
-        .fontSize(13)
-        .fontColor(Tokens.mutedSoft)
-        .margin({ top: 22 })
+      if (this.focusRunning) {
+        Text(this.t('focusElapsed', this.elapsedClock()) + ' · ' + this.minutesLabel(this.focusPlannedMinutes))
+          .fontSize(13)
+          .fontColor(Tokens.mutedSoft)
+          .margin({ top: 22 })
+      }
 
       Blank()
 
-      Row() {
-        Text(this.focusPaused ? this.t('focusResume') : this.t('focusPause'))
+      if (this.focusRunning) {
+        Row() {
+          Text(this.focusPaused ? this.t('focusResume') : this.t('focusPause'))
+            .fontSize(14)
+            .fontColor(Tokens.inkSoft)
+            .textAlign(TextAlign.Center)
+            .height(44)
+            .padding({ left: 22, right: 22 })
+            .onClick(() => {
+              if (this.focusPaused) {
+                this.resumeFocus();
+              } else {
+                this.pauseFocus();
+              }
+            })
+          Text(this.t('focusEnd'))
+            .fontSize(14)
+            .fontColor(Tokens.coral)
+            .textAlign(TextAlign.Center)
+            .height(44)
+            .padding({ left: 22, right: 22 })
+            .margin({ left: 8 })
+            .onClick(() => {
+              this.stopFocusEarly();
+            })
+        }
+        .margin({ bottom: 28 })
+        .alignItems(VerticalAlign.Center)
+      } else {
+        Button(this.t('focusStartCycle'))
+          .height(46)
           .fontSize(14)
-          .fontColor(Tokens.inkSoft)
-          .textAlign(TextAlign.Center)
-          .height(44)
-          .padding({ left: 22, right: 22 })
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.themeInk())
+          .backgroundColor(this.themeButton())
+          .borderRadius(23)
+          .padding({ left: 30, right: 30 })
+          .margin({ bottom: 36 })
           .onClick(() => {
-            if (this.focusPaused) {
-              this.resumeFocus();
-            } else {
-              this.pauseFocus();
-            }
-          })
-        Text(this.t('focusEnd'))
-          .fontSize(14)
-          .fontColor(Tokens.coral)
-          .textAlign(TextAlign.Center)
-          .height(44)
-          .padding({ left: 22, right: 22 })
-          .margin({ left: 8 })
-          .onClick(() => {
-            this.stopFocusEarly();
+            this.startCycle();
           })
       }
-      .margin({ bottom: 28 })
-      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageBg())
     .scale({ x: this.clockScale, y: this.clockScale })
-  }
-
-  @Builder FocusPickerOverlay() {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(Tokens.dim)
-        .backdropBlur(6)
-        .onClick(() => {
-          this.cancelFocusPicker();
-        })
-
-      Column() {
-        Text(this.t('focusTitle'))
-          .fontSize(11)
-          .fontColor(Tokens.muted)
-          .margin({ top: 12, bottom: 2 })
-
-        Row() {
-          TextPicker({ range: this.focusPickerRange, selected: this.focusPickerIndex() })
-            .width(64)
-            .height(150)
-            .defaultPickerItemHeight(34)
-            .canLoop(false)
-            .textStyle({ color: Tokens.mutedSoft, font: { size: 15 } })
-            .selectedTextStyle({ color: Tokens.ink, font: { size: 21, weight: FontWeight.Medium } })
-            .disappearTextStyle({ color: '#D8CEBA', font: { size: 13 } })
-            .onChange((value: string | string[], index: number | number[]) => {
-              this.focusPickerMinutes = 15 + (index as number) * 5;
-            })
-          Text(this.t('focusUnit'))
-            .fontSize(12)
-            .fontColor(Tokens.muted)
-            .margin({ left: 2, bottom: 2 })
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-
-        Row() {
-          Text(this.t('cancel'))
-            .fontSize(12.5)
-            .fontColor(Tokens.muted)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .height(42)
-            .onClick(() => {
-              this.cancelFocusPicker();
-            })
-          Text(this.t('focusStartBtn'))
-            .fontSize(12.5)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.themeButton())
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .height(42)
-            .onClick(() => {
-              this.confirmFocusPicker();
-            })
-        }
-        .width('100%')
-        .margin({ top: 2 })
-      }
-      .width(198)
-      .padding({ top: 8, bottom: 4, left: 10, right: 10 })
-      .backgroundColor(Tokens.surface)
-      .borderRadius(22)
-      .borderWidth(1)
-      .borderColor('#CCFFFFFF')
-      .shadow({ radius: 36, color: '#24000000', offsetX: 0, offsetY: 16 })
-      .scale({ x: this.focusPickerScale, y: this.focusPickerScale })
-    }
-    .width('100%')
-    .height('100%')
   }
 
   @Builder FocusSummaryOverlay() {
@@ -3842,68 +3837,40 @@ struct Index {
         })
 
       Column() {
-        Text(this.summaryIsBreak ? this.t('focusBreakOver') : this.t('focusSummary'))
+        Text(this.t('focusSummary'))
           .fontSize(11)
           .fontColor(Tokens.muted)
           .margin({ top: 4 })
 
         Text(this.minutesLabel(this.summaryMinutes))
-          .fontSize(this.summaryIsBreak ? 26 : 34)
+          .fontSize(34)
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.ink)
           .letterSpacing(-0.5)
           .margin({ top: 6 })
 
-        if (!this.summaryIsBreak) {
-          Text(this.t('focusReviewed', this.summaryItems, this.summaryRemembered))
-            .fontSize(11.5)
-            .fontColor(Tokens.inkSoft)
-            .margin({ top: 10 })
-        }
+        Text(this.t('focusReviewed', this.summaryItems, this.summaryRemembered))
+          .fontSize(11.5)
+          .fontColor(Tokens.inkSoft)
+          .margin({ top: 10 })
 
-        Text(this.clockLabel(this.summaryStart) + ' – ' + this.clockLabel(this.summaryEnd))
+        Text(this.t('focusSegments', this.summarySegments) + ' · ' + this.clockLabel(this.summaryStart) + ' – ' +
+          this.clockLabel(this.summaryEnd))
           .fontSize(10)
           .fontColor(Tokens.mutedSoft)
           .margin({ top: 5 })
 
-        if (!this.summaryCompleted && !this.summaryIsBreak) {
-          Text(this.t('focusEarly'))
-            .fontSize(10)
-            .fontColor(Tokens.coral)
-            .margin({ top: 7 })
-        }
-
-        Row() {
-          Text(this.summaryIsBreak ? this.t('focusDone') : this.t('focusBreak'))
-            .fontSize(12)
-            .fontColor(Tokens.muted)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .height(44)
-            .onClick(() => {
-              if (this.summaryIsBreak) {
-                this.closeSummary();
-              } else {
-                this.startBreak();
-              }
-            })
-          Text(this.summaryIsBreak ? this.t('focusAgain') : this.t('focusDone'))
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.themeButton())
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .height(44)
-            .onClick(() => {
-              if (this.summaryIsBreak) {
-                this.startNextRound();
-              } else {
-                this.closeSummary();
-              }
-            })
-        }
-        .width('100%')
-        .margin({ top: 12 })
+        Text(this.t('focusDone'))
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.themeButton())
+          .textAlign(TextAlign.Center)
+          .width('100%')
+          .height(44)
+          .margin({ top: 10 })
+          .onClick(() => {
+            this.closeSummary();
+          })
       }
       .width(244)
       .padding({ top: 20, bottom: 2, left: 14, right: 14 })

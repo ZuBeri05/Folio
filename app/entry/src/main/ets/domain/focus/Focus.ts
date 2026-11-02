@@ -11,6 +11,16 @@ export interface FocusSessionLike {
   startedAt: number;
   endedAt: number;
   minutes: number;
+  itemCount?: number;
+  remembered?: number;
+}
+
+/** 一轮循环的累计 */
+export interface CycleSummary {
+  segments: number;
+  minutes: number;
+  itemCount: number;
+  remembered: number;
 }
 
 export interface FocusSummary {
@@ -108,4 +118,29 @@ export function weekBuckets(sessions: FocusSessionLike[], now: number): number[]
 export function durationParts(minutes: number): number[] {
   const safe = minutes > 0 ? minutes : 0;
   return [Math.floor(safe / 60), safe % 60];
+}
+
+/** 第几轮之后休息多久：每 4 轮一次长休息 */
+export function breakMinutesFor(round: number): number {
+  const safe = round > 0 ? round : 1;
+  return safe % 4 === 0 ? 15 : 5;
+}
+
+/** 从 since 开始，累计这一段循环的专注 */
+export function cycleSummary(sessions: FocusSessionLike[], since: number): CycleSummary {
+  let segments = 0;
+  let minutes = 0;
+  let itemCount = 0;
+  let remembered = 0;
+  for (let i = 0; i < sessions.length; i++) {
+    const session = sessions[i];
+    if (session.startedAt < since) {
+      continue;
+    }
+    segments = segments + 1;
+    minutes = minutes + session.minutes;
+    itemCount = itemCount + (session.itemCount !== undefined ? session.itemCount : 0);
+    remembered = remembered + (session.remembered !== undefined ? session.remembered : 0);
+  }
+  return { segments: segments, minutes: minutes, itemCount: itemCount, remembered: remembered };
 }

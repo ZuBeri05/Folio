@@ -76,6 +76,12 @@ export interface FocusSession {
   itemCount: number;
   remembered: number;
   completed: boolean;
+  /** 只有 activeFocus 会填：这一段是不是休息 */
+  isBreak?: boolean;
+  /** 只有 activeFocus 会填：循环里的第几轮 */
+  round?: number;
+  /** 只有 activeFocus 会填：这一轮循环的起点 */
+  cycleStart?: number;
 }
 
 export interface Settings {

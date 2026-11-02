@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  breakMinutesFor,
+  cycleSummary,
   durationParts,
   formatClock,
   remainingMs,
@@ -94,5 +96,39 @@ describe('focus aggregation', () => {
     expect(durationParts(25)).toEqual([0, 25]);
     expect(durationParts(75)).toEqual([1, 15]);
     expect(durationParts(-5)).toEqual([0, 0]);
+  });
+});
+
+describe('pomodoro cycle', () => {
+  it('takes a short break after each round and a long one every fourth', () => {
+    expect(breakMinutesFor(1)).toBe(5);
+    expect(breakMinutesFor(2)).toBe(5);
+    expect(breakMinutesFor(3)).toBe(5);
+    expect(breakMinutesFor(4)).toBe(15);
+    expect(breakMinutesFor(5)).toBe(5);
+    expect(breakMinutesFor(8)).toBe(15);
+    // 越界值当第一轮
+    expect(breakMinutesFor(0)).toBe(5);
+  });
+
+  it('adds up only the sessions inside the current cycle', () => {
+    const now = new Date(2026, 10, 4, 21, 0, 0).getTime();
+    const sessions = [
+      { startedAt: now - 7200000, endedAt: now - 5400000, minutes: 30, itemCount: 4, remembered: 3 },
+      { startedAt: now - 3600000, endedAt: now - 1800000, minutes: 30, itemCount: 6, remembered: 5 },
+      { startedAt: now - 600000, endedAt: now - 300000, minutes: 5, itemCount: 2, remembered: 1 }
+    ];
+    const cycle = cycleSummary(sessions, now - 3600000);
+    expect(cycle.segments).toBe(2);
+    expect(cycle.minutes).toBe(35);
+    expect(cycle.itemCount).toBe(8);
+    expect(cycle.remembered).toBe(6);
+  });
+
+  it('returns an empty cycle when nothing started yet', () => {
+    const cycle = cycleSummary([], 0);
+    expect(cycle.segments).toBe(0);
+    expect(cycle.minutes).toBe(0);
+    expect(cycle.itemCount).toBe(0);
   });
 });
