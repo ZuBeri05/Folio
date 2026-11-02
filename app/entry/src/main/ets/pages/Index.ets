@@ -106,8 +106,6 @@ struct Index {
   @State focusRound: number = 1;
   /** 这一轮循环是什么时候开始的，用来算小结里的累计 */
   @State focusCycleStart: number = 0;
-  /** 大圆盘上还没开始时选的时长 */
-  @State focusMinutesDraft: number = 30;
   @State showFocusSummary: boolean = false;
   @State summaryScale: number = 1;
   @State summaryMinutes: number = 0;
@@ -200,7 +198,6 @@ struct Index {
     this.settings = data.settings;
     this.focusSessions = data.focusSessions;
     this.focusPlannedMinutes = this.settings.focusMinutes;
-    this.focusMinutesDraft = this.settings.focusMinutes;
     this.todayLabel = this.localizedToday();
     this.restoreFocus(data.activeFocus);
     this.syncSystemBars();
@@ -935,18 +932,11 @@ struct Index {
     });
   }
 
-  /** 大圆盘上还没开始时调时长，5 分钟一档 */
-  private stepFocusDraft(delta: number): void {
-    const next = this.focusMinutesDraft + delta * 5;
-    this.focusMinutesDraft = Math.min(90, Math.max(15, next));
-  }
-
   /** 从大圆盘点开始：起一轮新的番茄循环 */
   private startCycle(): void {
     this.focusCycleStart = Date.now();
     this.focusRound = 1;
-    this.rememberFocusMinutes(this.focusMinutesDraft);
-    this.startSegment(this.focusMinutesDraft, false);
+    this.startSegment(this.settings.focusMinutes, false);
   }
 
   private startSegment(minutes: number, isBreak: boolean): void {
@@ -970,22 +960,6 @@ struct Index {
     const title = wasBreak ? this.t('focusBreakOver') : this.t('focusSummary');
     const text = wasBreak ? this.t('focusNotifyNext', String(round)) : this.t('focusNotifyRest', String(minutes));
     FocusAlert.ring(title, text);
-  }
-
-  private rememberFocusMinutes(minutes: number): void {
-    if (minutes === this.settings.focusMinutes) {
-      return;
-    }
-    this.settings = {
-      reminderEnabled: this.settings.reminderEnabled,
-      reminderTime: this.settings.reminderTime,
-      subjectTimes: this.settings.subjectTimes,
-      themeIndex: this.settings.themeIndex,
-      language: this.settings.language,
-      targetRetention: this.settings.targetRetention,
-      maxIntervalDays: this.settings.maxIntervalDays,
-      focusMinutes: minutes
-    };
   }
 
   private beginFocusTick(): void {
@@ -1325,6 +1299,24 @@ struct Index {
       targetRetention: this.settings.targetRetention,
       maxIntervalDays: days,
       focusMinutes: this.settings.focusMinutes
+    };
+    this.persist();
+  }
+
+  /** 番茄钟一轮多长，设置页里改 */
+  private updateFocusMinutes(minutes: number): void {
+    if (minutes === this.settings.focusMinutes) {
+      return;
+    }
+    this.settings = {
+      reminderEnabled: this.settings.reminderEnabled,
+      reminderTime: this.settings.reminderTime,
+      subjectTimes: this.settings.subjectTimes,
+      themeIndex: this.settings.themeIndex,
+      language: this.settings.language,
+      targetRetention: this.settings.targetRetention,
+      maxIntervalDays: this.settings.maxIntervalDays,
+      focusMinutes: minutes
     };
     this.persist();
   }
@@ -1929,9 +1921,9 @@ struct Index {
       .width(34)
       .height(34)
       .borderRadius(17)
-      .backgroundColor('#FFEDE6')
+      .backgroundColor(this.focusRunning ? '#FFE3D8' : '#FFEDE6')
       .borderWidth(1)
-      .borderColor('#40FF6542')
+      .borderColor(this.focusRunning ? '#FF6542' : '#40FF6542')
       .margin({ right: showAdd ? 8 : 0 })
       .onClick(() => {
         this.openFocusClock();
@@ -1986,9 +1978,7 @@ struct Index {
       .alignItems(VerticalAlign.Center)
       .translate({ x: (1 - this.todayTitleIn) * -this.mv(72) })
       .opacity(0.3 + 0.7 * Math.min(1, this.todayTitleIn * 1.8))
-      .margin({ top: this.isWide ? 10 : 8, bottom: this.overdueItems().length > 0 ? 6 : 14 })
-
-      this.FocusBar()
+      .margin({ top: this.isWide ? 10 : 8, bottom: this.overdueItems().length > 0 ? 10 : 16 })
 
       // 欠账要摆在明面上：漏了几天、最早欠到哪天
       if (this.overdueItems().length > 0) {
@@ -2957,6 +2947,33 @@ struct Index {
         }
         .margin({ top: 10 })
 
+        Divider()
+          .color(Tokens.line)
+          .margin({ top: 16, bottom: 14 })
+
+        // 番茄钟一轮多长；大圆盘上不再调，统一在这儿改
+        Text(this.t('focusTitle'))
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.ink)
+
+        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+          ForEach([15, 20, 25, 30, 45, 60], (value: number) => {
+            Text(this.t('minutesShort', value))
+              .fontSize(10)
+              .fontWeight(this.settings.focusMinutes === value ? FontWeight.Bold : FontWeight.Normal)
+              .fontColor(this.settings.focusMinutes === value ? '#6C4B00' : Tokens.muted)
+              .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+              .backgroundColor(this.settings.focusMinutes === value ? Tokens.yellowSoft : Tokens.surface)
+              .borderRadius(11)
+              .margin({ right: 6, bottom: 6 })
+              .onClick(() => {
+                this.updateFocusMinutes(value);
+              })
+          }, (value: number) => '' + value)
+        }
+        .margin({ top: 10 })
+
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -3542,102 +3559,6 @@ struct Index {
     .height('100%')
   }
 
-  @Builder FocusBar() {
-    Column() {
-      Row() {
-        Row() {
-          Image($r('app.media.tomato'))
-            .width(17)
-            .height(17)
-            .opacity(this.focusRunning && this.focusPaused ? 0.4 : 1)
-
-          if (this.focusRunning) {
-            Text(this.focusClock())
-              .fontSize(14)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(Tokens.ink)
-              .margin({ left: 8 })
-            Text(this.focusIsBreak ? this.t('focusBreaking') : this.t('focusCardTitle'))
-              .fontSize(10)
-              .fontColor(Tokens.muted)
-              .margin({ left: 7 })
-            Text('›')
-              .fontSize(12)
-              .fontColor(Tokens.mutedSoft)
-              .margin({ left: 4 })
-          } else {
-            Text(this.t('focusStart', this.settings.focusMinutes))
-              .fontSize(11.5)
-              .fontWeight(FontWeight.Medium)
-              .fontColor('#9B5C00')
-              .margin({ left: 8 })
-          }
-        }
-        .alignItems(VerticalAlign.Center)
-        .height('100%')
-        .layoutWeight(1)
-        .onClick(() => {
-          this.openFocusClock();
-        })
-
-        if (this.focusRunning) {
-          Text(this.focusPaused ? this.t('focusResume') : this.t('focusPause'))
-            .fontSize(11)
-            .fontColor(Tokens.inkSoft)
-            .textAlign(TextAlign.Center)
-            .height(28)
-            .padding({ left: 8, right: 8 })
-            .onClick(() => {
-              if (this.focusPaused) {
-                this.resumeFocus();
-              } else {
-                this.pauseFocus();
-              }
-            })
-          Text(this.t('focusEnd'))
-            .fontSize(11)
-            .fontColor(Tokens.coral)
-            .textAlign(TextAlign.Center)
-            .height(28)
-            .padding({ left: 8, right: 8 })
-            .onClick(() => {
-              this.stopFocusEarly();
-            })
-        } else {
-          Text('›')
-            .fontSize(15)
-            .fontColor(Tokens.mutedSoft)
-            .margin({ right: 2 })
-        }
-      }
-      .width('100%')
-      .height(42)
-      .padding({ left: 14, right: 10 })
-      .alignItems(VerticalAlign.Center)
-
-      if (this.focusRunning) {
-        Row() {
-          Row()
-            .width(this.focusProgress() + '%')
-            .height(2)
-            .backgroundColor(this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
-        }
-        .width('100%')
-        .height(2)
-        .backgroundColor(Tokens.line)
-      }
-    }
-    .width('100%')
-    .backgroundColor(Tokens.surfaceSoft)
-    .borderRadius(14)
-    .borderWidth(1)
-    .borderColor('#A6FFC531')
-    .clip(true)
-    .margin({ bottom: 16 })
-    .translate({ x: (1 - this.todayTitleIn) * -this.mv(72) })
-    .opacity(0.3 + 0.7 * Math.min(1, this.todayTitleIn * 1.8))
-  }
-
   @Builder FocusMiniBar() {
     Column() {
       Row() {
@@ -3726,47 +3647,16 @@ struct Index {
               .fontColor(Tokens.muted)
               .margin({ top: 6 })
           } else {
-            Row() {
-              Text('－')
-                .fontSize(Math.max(15, this.clockSize() * 0.085))
-                .fontColor(Tokens.muted)
-                .textAlign(TextAlign.Center)
-                .width(Math.max(36, this.clockSize() * 0.16))
-                .height(Math.max(36, this.clockSize() * 0.16))
-                .borderRadius(Math.max(18, this.clockSize() * 0.08))
-                .backgroundColor(Tokens.surfaceSoft)
-                .onClick(() => {
-                  this.stepFocusDraft(-1);
-                })
-              Column() {
-                Text(this.minutesLabel(this.focusMinutesDraft))
-                  .fontSize(this.clockSize() * 0.13)
-                  .maxLines(1)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(Tokens.ink)
-                  .fontFeature('"tnum" 1')
-                Text(this.t('focusTitle'))
-                  .fontSize(Math.max(10, this.clockSize() * 0.045))
-                  .fontColor(Tokens.mutedSoft)
-                  .margin({ top: 4 })
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Center)
-              Text('＋')
-                .fontSize(Math.max(16, this.clockSize() * 0.09))
-                .fontColor(Tokens.muted)
-                .textAlign(TextAlign.Center)
-                .width(Math.max(36, this.clockSize() * 0.16))
-                .height(Math.max(36, this.clockSize() * 0.16))
-                .borderRadius(Math.max(18, this.clockSize() * 0.08))
-                .backgroundColor(Tokens.surfaceSoft)
-                .onClick(() => {
-                  this.stepFocusDraft(1);
-                })
-            }
-            .width(this.clockSize() * 0.88)
-            .alignItems(VerticalAlign.Center)
-            .margin({ top: 14 })
+            Text(this.minutesLabel(this.settings.focusMinutes))
+              .fontSize(this.clockSize() * 0.15)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(Tokens.ink)
+              .fontFeature('"tnum" 1')
+              .margin({ top: 12 })
+            Text(this.t('focusTitle'))
+              .fontSize(Math.max(10, this.clockSize() * 0.045))
+              .fontColor(Tokens.mutedSoft)
+              .margin({ top: 4 })
           }
         }
         .alignItems(HorizontalAlign.Center)
