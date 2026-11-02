@@ -114,6 +114,8 @@ struct Index {
   @State summaryStart: number = 0;
   @State summaryEnd: number = 0;
   @State summaryIsBreak: boolean = false;
+  @State showFocusClock: boolean = false;
+  @State clockScale: number = 1;
   private focusTimer: number = -1;
   private focusPausedRemaining: number = 0;
   private focusPickerRange: string[] = [];
@@ -1040,6 +1042,7 @@ struct Index {
     this.focusIsBreak = false;
     this.focusRemainingMs = 0;
     this.clearFocusAlarm();
+    this.closeFocusClock();
 
     if (wasBreak) {
       this.summaryIsBreak = true;
@@ -1182,6 +1185,50 @@ struct Index {
 
   private focusClock(): string {
     return formatClock(this.focusRemainingMs);
+  }
+
+  /** 大圆盘：放在桌边抬头就能看见，所以尺寸按短边走，平板上封顶 */
+  private clockSize(): number {
+    const w = this.vpWidth > 0 ? this.vpWidth : 360;
+    const h = this.vpHeight > 0 ? this.vpHeight : 720;
+    const short = Math.min(w, h);
+    // 上下还要留给关闭按钮、已过时间和操作按钮，横屏手机高度不够时按高度收
+    const room = h - 170;
+    return Math.max(150, Math.min(430, Math.min(short * 0.66, room)));
+  }
+
+  private elapsedClock(): string {
+    const total = this.focusPlannedMinutes * 60000;
+    return formatClock(Math.max(0, total - this.focusRemainingMs));
+  }
+
+  private openFocusClock(): void {
+    if (!this.focusRunning) {
+      return;
+    }
+    this.clockScale = 0.92;
+    this.showFocusClock = true;
+    this.setKeepScreenOn(true);
+    animateTo({ curve: Motion.settle() }, () => {
+      this.clockScale = 1;
+    });
+  }
+
+  private closeFocusClock(): void {
+    if (!this.showFocusClock) {
+      return;
+    }
+    this.showFocusClock = false;
+    this.setKeepScreenOn(false);
+  }
+
+  private setKeepScreenOn(on: boolean): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    window.getLastWindow(context).then((win: window.Window) => {
+      win.setWindowKeepScreenOn(on).catch(() => {
+      });
+    }).catch(() => {
+    });
   }
 
   /** 25 分钟 / 1 小时 15 分 */
@@ -1753,6 +1800,9 @@ struct Index {
       }
       if (this.showFocusPicker) {
         this.FocusPickerOverlay()
+      }
+      if (this.showFocusClock) {
+        this.FocusClockOverlay()
       }
       if (this.showFocusSummary) {
         this.FocusSummaryOverlay()
@@ -3480,20 +3530,46 @@ struct Index {
   @Builder FocusBar() {
     Column() {
       Row() {
-        Circle({ width: 6, height: 6 })
-          .fill(this.focusRunning && this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
+        Row() {
+          Image($r('app.media.tomato'))
+            .width(17)
+            .height(17)
+            .opacity(this.focusRunning && this.focusPaused ? 0.4 : 1)
+
+          if (this.focusRunning) {
+            Text(this.focusClock())
+              .fontSize(14)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(Tokens.ink)
+              .margin({ left: 8 })
+            Text(this.focusIsBreak ? this.t('focusBreaking') : this.t('focusCardTitle'))
+              .fontSize(10)
+              .fontColor(Tokens.muted)
+              .margin({ left: 7 })
+            Text('›')
+              .fontSize(12)
+              .fontColor(Tokens.mutedSoft)
+              .margin({ left: 4 })
+          } else {
+            Text(this.t('focusStart', this.settings.focusMinutes))
+              .fontSize(11.5)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#9B5C00')
+              .margin({ left: 8 })
+          }
+        }
+        .alignItems(VerticalAlign.Center)
+        .height('100%')
+        .layoutWeight(1)
+        .onClick(() => {
+          if (this.focusRunning) {
+            this.openFocusClock();
+          } else {
+            this.openFocusPicker();
+          }
+        })
 
         if (this.focusRunning) {
-          Text(this.focusClock())
-            .fontSize(14)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(Tokens.ink)
-            .margin({ left: 9 })
-          Text(this.focusIsBreak ? this.t('focusBreaking') : this.t('focusCardTitle'))
-            .fontSize(10)
-            .fontColor(Tokens.muted)
-            .margin({ left: 7 })
-          Blank()
           Text(this.focusPaused ? this.t('focusResume') : this.t('focusPause'))
             .fontSize(11)
             .fontColor(Tokens.inkSoft)
@@ -3517,12 +3593,6 @@ struct Index {
               this.stopFocusEarly();
             })
         } else {
-          Text(this.t('focusStart', this.settings.focusMinutes))
-            .fontSize(11.5)
-            .fontWeight(FontWeight.Medium)
-            .fontColor('#9B5C00')
-            .margin({ left: 9 })
-          Blank()
           Text('›')
             .fontSize(15)
             .fontColor(Tokens.mutedSoft)
@@ -3533,11 +3603,6 @@ struct Index {
       .height(42)
       .padding({ left: 14, right: 10 })
       .alignItems(VerticalAlign.Center)
-      .onClick(() => {
-        if (!this.focusRunning) {
-          this.openFocusPicker();
-        }
-      })
 
       if (this.focusRunning) {
         Row() {
@@ -3565,8 +3630,10 @@ struct Index {
   @Builder FocusMiniBar() {
     Column() {
       Row() {
-        Circle({ width: 6, height: 6 })
-          .fill(this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
+        Image($r('app.media.tomato'))
+          .width(15)
+          .height(15)
+          .opacity(this.focusPaused ? 0.4 : 1)
         Text(this.focusClock())
           .fontSize(12)
           .fontWeight(FontWeight.Medium)
@@ -3595,6 +3662,97 @@ struct Index {
     }
     .width('100%')
     .padding({ left: 20, right: 20, bottom: 8 })
+  }
+
+  /** 整页的番茄钟：一个圆盘 + 大号倒计时，放在桌边抬头就能看 */
+  @Builder FocusClockOverlay() {
+    Column() {
+      Row() {
+        Blank()
+        Text('×')
+          .fontSize(24)
+          .fontColor(Tokens.muted)
+          .textAlign(TextAlign.Center)
+          .width(44)
+          .height(44)
+          .onClick(() => {
+            this.closeFocusClock();
+          })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 32 })
+      .justifyContent(FlexAlign.End)
+
+      Blank()
+
+      Stack({ alignContent: Alignment.Center }) {
+        Progress({ value: this.focusProgress(), total: 100, type: ProgressType.Ring })
+          .width(this.clockSize())
+          .height(this.clockSize())
+          .color(this.focusPaused ? Tokens.mutedSoft : Tokens.coral)
+          .backgroundColor('#2E5E4B30')
+          .style({ strokeWidth: Math.max(9, this.clockSize() * 0.032), enableSmoothEffect: true })
+
+        Column() {
+          Image($r('app.media.tomato'))
+            .width(this.clockSize() * 0.11)
+            .height(this.clockSize() * 0.11)
+            .opacity(this.focusPaused ? 0.45 : 1)
+          Text(this.focusClock())
+            .fontSize(this.clockSize() * 0.26)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.focusPaused ? Tokens.muted : Tokens.ink)
+            .fontFeature('"tnum" 1')
+            .margin({ top: 8 })
+          Text(this.focusIsBreak ? this.t('focusBreaking') : this.t('focusRunning'))
+            .fontSize(Math.max(12, this.clockSize() * 0.055))
+            .fontColor(Tokens.muted)
+            .margin({ top: 6 })
+        }
+        .alignItems(HorizontalAlign.Center)
+      }
+      .width(this.clockSize())
+      .height(this.clockSize())
+
+      Text(this.t('focusElapsed', this.elapsedClock()) + ' · ' + this.minutesLabel(this.focusPlannedMinutes))
+        .fontSize(13)
+        .fontColor(Tokens.mutedSoft)
+        .margin({ top: 22 })
+
+      Blank()
+
+      Row() {
+        Text(this.focusPaused ? this.t('focusResume') : this.t('focusPause'))
+          .fontSize(14)
+          .fontColor(Tokens.inkSoft)
+          .textAlign(TextAlign.Center)
+          .height(44)
+          .padding({ left: 22, right: 22 })
+          .onClick(() => {
+            if (this.focusPaused) {
+              this.resumeFocus();
+            } else {
+              this.pauseFocus();
+            }
+          })
+        Text(this.t('focusEnd'))
+          .fontSize(14)
+          .fontColor(Tokens.coral)
+          .textAlign(TextAlign.Center)
+          .height(44)
+          .padding({ left: 22, right: 22 })
+          .margin({ left: 8 })
+          .onClick(() => {
+            this.stopFocusEarly();
+          })
+      }
+      .margin({ bottom: 28 })
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.pageBg())
+    .scale({ x: this.clockScale, y: this.clockScale })
   }
 
   @Builder FocusPickerOverlay() {
