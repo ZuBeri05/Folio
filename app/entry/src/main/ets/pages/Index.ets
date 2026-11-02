@@ -1050,7 +1050,14 @@ struct Index {
       return;
     }
     const startedAt = this.focusStartedAt;
-    const endedAt = endOverride !== undefined ? endOverride : Date.now();
+    // 走完的那一段按原定结束时间记，App 被冻结后补算也不会把时长算多
+    const nowMs = Date.now();
+    let endedAt = nowMs;
+    if (endOverride !== undefined) {
+      endedAt = endOverride;
+    } else if (completed && this.focusEndAt > 0 && this.focusEndAt <= nowMs) {
+      endedAt = this.focusEndAt;
+    }
     const wasBreak = this.focusIsBreak;
     const planned = this.focusPlannedMinutes;
     const round = this.focusRound;
