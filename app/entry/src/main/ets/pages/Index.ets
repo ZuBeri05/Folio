@@ -58,6 +58,8 @@ struct Index {
   // 今日条数变化时，胶囊轻轻弹一下
   @State countPop: number = 1;
   private countPopTimer: number = -1;
+  @State clockPop: number = 1;
+  private clockPopTimer: number = -1;
   // 设置页：每张分组卡各自的入场进度
   @State setIn: number[] = [1, 1, 1, 1, 1];
   // 记录页：单张卡片实测高度，用于让时间轴竖线连续
@@ -255,6 +257,23 @@ struct Index {
     animateTo({ curve: Motion.settle(), delay: 180 }, () => {
       this.todayLoggedIn = 1;
     });
+  }
+
+  /** 一段结束、下一段接上：中间的数字先轻轻胀一下 */
+  private popClock(): void {
+    if (this.clockPopTimer >= 0) {
+      clearTimeout(this.clockPopTimer);
+      this.clockPopTimer = -1;
+    }
+    animateTo({ duration: 130, curve: Motion.snap() }, () => {
+      this.clockPop = 1.05;
+    });
+    this.clockPopTimer = setTimeout(() => {
+      this.clockPopTimer = -1;
+      animateTo({ duration: 240, curve: Motion.settle() }, () => {
+        this.clockPop = 1;
+      });
+    }, 130);
   }
 
   /** 条数变了：胶囊先胀一下再落回，别让数字硬跳 */
@@ -988,14 +1007,23 @@ struct Index {
 
   private startSegment(minutes: number, isBreak: boolean): void {
     const safe = Math.min(90, Math.max(1, Math.round(minutes)));
-    this.focusIsBreak = isBreak;
-    this.focusPaused = false;
-    this.focusRunning = true;
-    this.focusPlannedMinutes = safe;
-    this.focusStartedAt = Date.now();
-    this.focusEndAt = this.focusStartedAt + safe * 60000;
-    this.focusRemainingMs = safe * 60000;
+    const startedAt = Date.now();
+    const wasRunning = this.focusRunning;
+    // 待机色换专注色、时长换倒计时，都走一段过渡，别硬切
+    animateTo({ duration: Motion.base, curve: Motion.decel() }, () => {
+      this.focusIsBreak = isBreak;
+      this.focusPaused = false;
+      this.focusRunning = true;
+      this.focusPlannedMinutes = safe;
+      this.focusRemainingMs = safe * 60000;
+    });
+    this.focusStartedAt = startedAt;
+    this.focusEndAt = startedAt + safe * 60000;
     this.focusPausedRemaining = 0;
+    if (wasRunning) {
+      // 专注接休息、休息接专注：数字换掉时给一下反馈
+      this.popClock();
+    }
     this.beginFocusTick();
     this.persist();
     this.scheduleFocusAlarm(safe);
@@ -1040,7 +1068,9 @@ struct Index {
     }
     this.focusPausedRemaining = Math.max(0, this.focusEndAt - Date.now());
     this.focusRemainingMs = this.focusPausedRemaining;
-    this.focusPaused = true;
+    animateTo({ duration: Motion.quick, curve: Motion.standard() }, () => {
+      this.focusPaused = true;
+    });
     this.persist();
     this.clearFocusAlarm();
   }
@@ -1050,7 +1080,9 @@ struct Index {
       return;
     }
     this.focusEndAt = Date.now() + this.focusPausedRemaining;
-    this.focusPaused = false;
+    animateTo({ duration: Motion.quick, curve: Motion.standard() }, () => {
+      this.focusPaused = false;
+    });
     this.persist();
     this.scheduleFocusAlarm(Math.max(1, Math.round(this.focusPausedRemaining / 60000)));
   }
@@ -1083,10 +1115,12 @@ struct Index {
     const planned = this.focusPlannedMinutes;
     const round = this.focusRound;
     this.stopFocusTick();
-    this.focusRunning = false;
-    this.focusPaused = false;
-    this.focusIsBreak = false;
-    this.focusRemainingMs = 0;
+    animateTo({ duration: Motion.base, curve: Motion.decel() }, () => {
+      this.focusRunning = false;
+      this.focusPaused = false;
+      this.focusIsBreak = false;
+      this.focusRemainingMs = 0;
+    });
     this.clearFocusAlarm();
 
     if (wasBreak) {
@@ -1289,6 +1323,13 @@ struct Index {
       return Tokens.mutedSoft;
     }
     return this.focusIsBreak ? Tokens.blue : Tokens.coral;
+  }
+
+  /** 圆盘中心：待机时长和倒计时互换时的过渡 */
+  private clockSwap(): TransitionEffect {
+    return TransitionEffect.OPACITY
+      .combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
+      .animation({ duration: Motion.base, curve: Motion.decel() });
   }
 
   /** 第 2 轮 · 专注中 */
@@ -3797,30 +3838,39 @@ struct Index {
             .opacity(this.focusRunning && this.focusPaused ? 0.45 : 1)
 
           if (this.focusRunning) {
-            Text(this.focusClock())
-              .fontSize(this.clockSize() * 0.26)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.focusPaused ? Tokens.muted : Tokens.ink)
-              .fontFeature('"tnum" 1')
-              .margin({ top: 8 })
-            Text(this.roundLabel())
-              .fontSize(Math.max(12, this.clockSize() * 0.055))
-              .fontColor(Tokens.muted)
-              .margin({ top: 6 })
+            Column() {
+              Text(this.focusClock())
+                .fontSize(this.clockSize() * 0.26)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.focusPaused ? Tokens.muted : Tokens.ink)
+                .fontFeature('"tnum" 1')
+                .margin({ top: 8 })
+              Text(this.roundLabel())
+                .fontSize(Math.max(12, this.clockSize() * 0.055))
+                .fontColor(Tokens.muted)
+                .margin({ top: 6 })
+            }
+            .alignItems(HorizontalAlign.Center)
+            .transition(this.clockSwap())
           } else {
-            Text(this.minutesLabel(this.settings.focusMinutes))
-              .fontSize(this.clockSize() * 0.15)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(Tokens.ink)
-              .fontFeature('"tnum" 1')
-              .margin({ top: 12 })
-            Text(this.t('focusTitle'))
-              .fontSize(Math.max(10, this.clockSize() * 0.045))
-              .fontColor(Tokens.mutedSoft)
-              .margin({ top: 4 })
+            Column() {
+              Text(this.minutesLabel(this.settings.focusMinutes))
+                .fontSize(this.clockSize() * 0.15)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(Tokens.ink)
+                .fontFeature('"tnum" 1')
+                .margin({ top: 12 })
+              Text(this.t('focusTitle'))
+                .fontSize(Math.max(10, this.clockSize() * 0.045))
+                .fontColor(Tokens.mutedSoft)
+                .margin({ top: 4 })
+            }
+            .alignItems(HorizontalAlign.Center)
+            .transition(this.clockSwap())
           }
         }
         .alignItems(HorizontalAlign.Center)
+        .scale({ x: this.clockPop, y: this.clockPop })
       }
       .width(this.clockSize())
       .height(this.clockSize())
@@ -3830,6 +3880,9 @@ struct Index {
           .fontSize(13)
           .fontColor(Tokens.mutedSoft)
           .margin({ top: 22 })
+          .transition(TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: 6 }))
+            .animation({ duration: Motion.quick, curve: Motion.decel() }))
       }
 
       Blank()
@@ -3864,6 +3917,9 @@ struct Index {
         }
         .margin({ bottom: 28 })
         .alignItems(VerticalAlign.Center)
+        .transition(TransitionEffect.OPACITY
+          .combine(TransitionEffect.translate({ y: -8 }))
+          .animation({ duration: Motion.base, curve: Motion.decel() }))
       } else {
         Button(this.t('focusStartCycle'))
           .height(46)
@@ -3874,6 +3930,9 @@ struct Index {
           .borderRadius(23)
           .padding({ left: 30, right: 30 })
           .margin({ bottom: 36 })
+          .transition(TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: 10 }))
+            .animation({ duration: Motion.base, curve: Motion.decel() }))
           .onClick(() => {
             this.startCycle();
           })
