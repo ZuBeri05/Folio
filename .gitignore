@@ -7,7 +7,13 @@ build/
 *.hap
 *.hsp
 *.har
-design/*.png
-**/.dsh-ops-update-*.lock
-
+*.app
+*.zip
+dist/
+design/
+.superpowers/
 .signing-backup/
+app/build-profile.signing.json5
+**/.dsh-ops-update-*.lock
+scripts/
+store-screenshots/
