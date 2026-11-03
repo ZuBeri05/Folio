@@ -55,6 +55,9 @@ struct Index {
   // 今日页：标题（左）、列表（下）、今天已记（右）三个方向
   @State todayTitleIn: number = 1;
   @State todayLoggedIn: number = 1;
+  // 今日条数变化时，胶囊轻轻弹一下
+  @State countPop: number = 1;
+  private countPopTimer: number = -1;
   // 设置页：每张分组卡各自的入场进度
   @State setIn: number[] = [1, 1, 1, 1, 1];
   // 记录页：单张卡片实测高度，用于让时间轴竖线连续
@@ -252,6 +255,23 @@ struct Index {
     animateTo({ curve: Motion.settle(), delay: 180 }, () => {
       this.todayLoggedIn = 1;
     });
+  }
+
+  /** 条数变了：胶囊先胀一下再落回，别让数字硬跳 */
+  private popCount(): void {
+    if (this.countPopTimer >= 0) {
+      clearTimeout(this.countPopTimer);
+      this.countPopTimer = -1;
+    }
+    animateTo({ duration: 120, curve: Motion.snap() }, () => {
+      this.countPop = 1.12;
+    });
+    this.countPopTimer = setTimeout(() => {
+      this.countPopTimer = -1;
+      animateTo({ duration: 220, curve: Motion.settle() }, () => {
+        this.countPop = 1;
+      });
+    }, 120);
   }
 
   private refreshNotificationState(): void {
@@ -685,8 +705,12 @@ struct Index {
 
   private backToEntry(): void {
     this.discardPendingReview();
-    this.reviewStage = 'entry';
-    this.reviewScale = 1;
+    // 和进入评分页同一套节奏，退回来也别硬切
+    this.reviewScale = 0.96;
+    animateTo({ curve: Motion.snap() }, () => {
+      this.reviewStage = 'entry';
+      this.reviewScale = 1;
+    });
   }
 
   private startRating(): void {
@@ -702,6 +726,7 @@ struct Index {
     this.discardPendingReview();
     const next = postponeToTomorrow(this.reviewItem, Date.now());
     this.items = this.items.map((item: StudyItem) => item.id === next.id ? next : item);
+    this.popCount();
     this.closeReview();
     this.persist();
     this.syncReminder();
@@ -766,6 +791,7 @@ struct Index {
     animateTo({ duration: 260, curve: Motion.decel() }, () => {
       this.items = this.items.map((value: StudyItem) => value.id === updated.id ? updated : value);
     });
+    this.popCount();
     const log: ReviewLog = {
       id: newId(),
       itemId: item.id,
@@ -825,6 +851,7 @@ struct Index {
     animateTo({ duration: 320, curve: Motion.decel() }, () => {
       this.items = [item, ...this.items];
     });
+    this.popCount();
     this.draftTitle = '';
     this.showComposer = false;
     this.switchTab(0);
@@ -872,13 +899,27 @@ struct Index {
     });
   }
 
+  /** 时间选择器收起：缩回去再撤，和别的浮层一个节奏 */
+  private closeTimePickerAnimated(): void {
+    if (!this.showTimePicker) {
+      return;
+    }
+    animateTo({ duration: Motion.quick, curve: Motion.accel() }, () => {
+      this.timePickerScale = 0.94;
+    });
+    setTimeout(() => {
+      this.showTimePicker = false;
+      this.timePickerScale = 1;
+    }, Motion.quick);
+  }
+
   private cancelTimePicker(): void {
-    this.showTimePicker = false;
+    this.closeTimePickerAnimated();
   }
 
   private confirmTimePicker(): void {
-    this.showTimePicker = false;
     this.applyReminderTime(this.pickerHour, this.pickerMinute);
+    this.closeTimePickerAnimated();
   }
 
   private applyReminderTime(hour: number, minute: number): void {
@@ -919,8 +960,14 @@ struct Index {
     if (!this.showFocusClock) {
       return;
     }
-    this.showFocusClock = false;
-    this.setKeepScreenOn(false);
+    animateTo({ duration: Motion.base, curve: Motion.accel() }, () => {
+      this.clockScale = 0.94;
+    });
+    setTimeout(() => {
+      this.showFocusClock = false;
+      this.clockScale = 1;
+      this.setKeepScreenOn(false);
+    }, Motion.base);
   }
 
   private setKeepScreenOn(on: boolean): void {
@@ -1109,8 +1156,17 @@ struct Index {
   }
 
   private closeSummary(): void {
-    this.showFocusSummary = false;
+    if (!this.showFocusSummary) {
+      return;
+    }
     FocusAlert.clear();
+    animateTo({ duration: Motion.base, curve: Motion.accel() }, () => {
+      this.summaryScale = 0.94;
+    });
+    setTimeout(() => {
+      this.showFocusSummary = false;
+      this.summaryScale = 1;
+    }, Motion.base);
   }
 
   /** 冷启动时把没跑完的那一段接回来 */
@@ -1641,15 +1697,29 @@ struct Index {
     });
   }
 
+  /** 确认框收起：缩回去再撤 */
+  private closeConfirmAnimated(): void {
+    if (!this.showConfirm) {
+      return;
+    }
+    animateTo({ duration: Motion.quick, curve: Motion.accel() }, () => {
+      this.confirmScale = 0.94;
+    });
+    setTimeout(() => {
+      this.showConfirm = false;
+      this.confirmScale = 1;
+    }, Motion.quick);
+  }
+
   private cancelConfirm(): void {
-    this.showConfirm = false;
+    this.closeConfirmAnimated();
   }
 
   private executeConfirm(): void {
     const kind = this.confirmKind;
     const subjectId = this.confirmSubjectId;
     const itemId = this.confirmItemId;
-    this.showConfirm = false;
+    this.closeConfirmAnimated();
     if (kind === 'subject') {
       this.subjects = this.subjects.filter((value: Subject) => value.id !== subjectId);
       if (this.draftSubjectId === subjectId && this.subjects.length > 0) {
@@ -1935,6 +2005,7 @@ struct Index {
     .width(112)
     .height(88)
     .justifyContent(FlexAlign.Center)
+    .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
     .onClick(() => {
       this.switchTab(index);
     })
@@ -1958,6 +2029,9 @@ struct Index {
       .borderWidth(1)
       .borderColor(this.focusRunning ? '#FF6542' : '#40FF6542')
       .margin({ right: showAdd ? 8 : 0 })
+      // 计时开始/结束时，这枚按钮的底色和描边跟着变，别硬切
+      .animation({ duration: Motion.quick, curve: Motion.standard() })
+      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.9 })
       .onClick(() => {
         this.openFocusClock();
       })
@@ -2005,6 +2079,7 @@ struct Index {
         .borderWidth(1)
         .borderColor('#A6FFC531')
         .borderRadius(15)
+        .scale({ x: this.countPop, y: this.countPop })
         .margin({ left: 12 })
       }
       .width('100%')
@@ -2035,6 +2110,10 @@ struct Index {
               .width('100%')
               .translate({ y: (1 - this.todayProgress) * (this.mv(36) + index * this.mv(8)) })
               .opacity(0.3 + 0.7 * Math.min(1, this.todayProgress * 1.8))
+              // 复习完一条就从列表里消失：淡出同时往上收，别让下面整排瞬间跳位
+              .transition(TransitionEffect.OPACITY
+                .combine(TransitionEffect.translate({ y: this.mv(12) }))
+                .animation({ duration: 280, curve: Motion.decel() }))
             }, (item: StudyItem) => item.id)
           }
           if (this.dueItems().length === 0 && this.todayCreatedItems().length > 0 && !this.isWide) {
@@ -2106,6 +2185,9 @@ struct Index {
     .width('100%')
     .height(230)
     .justifyContent(FlexAlign.Center)
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: this.mv(16) }))
+      .animation({ duration: 260, curve: Motion.decel() }))
   }
 
   @Builder TodayLogged() {
@@ -2123,6 +2205,7 @@ struct Index {
         Text(this.t('seeAll'))
           .fontSize(9)
           .fontColor('#B16A0A')
+          .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.9 })
           .onClick(() => {
             this.switchTab(1);
           })
@@ -2161,6 +2244,7 @@ struct Index {
         .transition(TransitionEffect.OPACITY
           .combine(TransitionEffect.translate({ y: -10 }))
           .animation({ duration: 280, curve: Motion.decel() }))
+        .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.97 })
         .onClick(() => {
           this.openItemActions(item);
         })
@@ -2413,6 +2497,7 @@ struct Index {
                 .borderWidth(1)
                 .borderColor(Tokens.line)
                 .borderRadius(10)
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.9 })
                 .onClick(() => {
                   this.draftFixedDays = Math.max(1, this.draftFixedDays - 1);
                 })
@@ -2433,6 +2518,7 @@ struct Index {
                 .borderWidth(1)
                 .borderColor(Tokens.line)
                 .borderRadius(10)
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.9 })
                 .onClick(() => {
                   this.draftFixedDays = Math.min(90, this.draftFixedDays + 1);
                 })
@@ -2628,12 +2714,16 @@ struct Index {
               .borderColor('#B3FFFFFF')
               .translate({ x: (1 - this.recIn[Math.min(index, 11)]) * -this.mv(26) })
               .opacity(this.recIn[Math.min(index, 11)])
+              .transition(TransitionEffect.OPACITY
+                .combine(TransitionEffect.translate({ x: -this.mv(20) }))
+                .animation({ duration: 280, curve: Motion.decel() }))
               .onAreaChange((_o: Area, n: Area) => {
                 const h: number = Number(n.height);
                 if (h > 1 && Math.abs(h - this.recRowH) > 0.5) {
                   this.recRowH = h;
                 }
               })
+              .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.97 })
               .onClick(() => {
                 this.openItemActions(item);
               })
@@ -2690,6 +2780,9 @@ struct Index {
                 .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                 .backgroundColor(this.calendarDays === value ? Tokens.yellowSoft : Tokens.surfaceSoft)
                 .borderRadius(12)
+                // 选哪个范围，底色和字色滑过去，别硬切
+                .animation({ duration: Motion.quick, curve: Motion.standard() })
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
                 .onClick(() => {
                   this.setCalendarDays(value);
                 })
@@ -2844,6 +2937,7 @@ struct Index {
           .padding({ left: 14, right: 12, top: 8, bottom: 8 })
           .backgroundColor(Tokens.surface)
           .borderRadius(10)
+          .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
           .onClick(() => {
             this.openTimePicker();
           })
@@ -2874,6 +2968,9 @@ struct Index {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
             .margin({ top: 6 })
+            .transition(TransitionEffect.OPACITY
+              .combine(TransitionEffect.translate({ y: -6 }))
+              .animation({ duration: Motion.quick, curve: Motion.decel() }))
         }
 
       }
@@ -2973,6 +3070,8 @@ struct Index {
               .padding({ left: 10, right: 10, top: 5, bottom: 5 })
               .backgroundColor(this.settings.maxIntervalDays === value ? Tokens.yellowSoft : Tokens.surface)
               .borderRadius(11)
+              .animation({ duration: Motion.quick, curve: Motion.standard() })
+              .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
               .onClick(() => {
                 this.updateMaxInterval(value);
               })
@@ -3000,6 +3099,8 @@ struct Index {
               .backgroundColor(this.settings.focusMinutes === value ? Tokens.yellowSoft : Tokens.surface)
               .borderRadius(11)
               .margin({ right: 6, bottom: 6 })
+              .animation({ duration: Motion.quick, curve: Motion.standard() })
+              .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
               .onClick(() => {
                 this.updateFocusMinutes(value);
               })
@@ -3038,6 +3139,7 @@ struct Index {
                 .fontSize(11)
                 .fontColor(Tokens.mutedSoft)
                 .margin({ left: 6 })
+                .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.85 })
                 .onClick(() => {
                   this.confirmDeleteSubject(subject);
                 })
@@ -3213,6 +3315,8 @@ struct Index {
             .width(22)
             .height(22)
             .objectFit(ImageFit.Contain)
+            .scale({ x: this.tab === index ? 1.08 : 1, y: this.tab === index ? 1.08 : 1 })
+            .animation({ duration: 200, curve: Motion.snap() })
     
           Text(this.navLabel(index))
             .fontSize(8)
@@ -3223,6 +3327,7 @@ struct Index {
         .layoutWeight(1)
         .height(62)
         .justifyContent(FlexAlign.Center)
+        .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
         .onClick(() => {
           this.switchTab(index);
         })
@@ -3621,12 +3726,16 @@ struct Index {
       .borderRadius(18)
       .borderWidth(1)
       .borderColor('#A6FFC531')
+      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.97 })
       .onClick(() => {
         this.switchTab(0);
       })
     }
     .width('100%')
     .padding({ left: 20, right: 20, bottom: 8 })
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: this.mv(14) }))
+      .animation({ duration: 260, curve: Motion.decel() }))
   }
 
   /** 整页的番茄钟：没开始时选时长，跑起来就是循环里的那一段 */
@@ -3640,6 +3749,7 @@ struct Index {
           .textAlign(TextAlign.Center)
           .width(44)
           .height(44)
+          .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.88 })
           .onClick(() => {
             this.closeFocusClock();
           })
@@ -3671,6 +3781,8 @@ struct Index {
               .borderRadius(2)
               .backgroundColor(this.clockAccent())
               .opacity(this.tickOpacity(index))
+              // 每分钟走完一格时，那格是淡下去而不是直接消失
+              .animation({ duration: Motion.slow, curve: Motion.standard() })
             Blank()
           }
           .width(this.clockSize() * 0.9)
@@ -3730,6 +3842,7 @@ struct Index {
             .textAlign(TextAlign.Center)
             .height(44)
             .padding({ left: 22, right: 22 })
+            .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
             .onClick(() => {
               if (this.focusPaused) {
                 this.resumeFocus();
@@ -3744,6 +3857,7 @@ struct Index {
             .height(44)
             .padding({ left: 22, right: 22 })
             .margin({ left: 8 })
+            .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
             .onClick(() => {
               this.stopFocusEarly();
             })
@@ -3853,6 +3967,8 @@ struct Index {
               .height(this.weekBarHeight(this.weekFocus()[index]))
               .backgroundColor(index === this.todayWeekIndex() ? Tokens.coral : '#E8DCC4')
               .borderRadius(3)
+              // 专注结束记进去之后，柱子长上来而不是瞬间变高
+              .animation({ duration: Motion.base, curve: Motion.settle() })
             Text(this.weekday(this.weekDayTs(index)))
               .fontSize(8)
               .fontColor(index === this.todayWeekIndex() ? Tokens.coral : Tokens.mutedSoft)
@@ -3877,6 +3993,9 @@ struct Index {
     .borderWidth(1)
     .borderColor('#B3FFFFFF')
     .margin({ bottom: 18 })
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: this.mv(18) }))
+      .animation({ duration: 300, curve: Motion.decel() }))
   }
 
   @Builder TimePickerOverlay() {
@@ -3932,6 +4051,7 @@ struct Index {
             .textAlign(TextAlign.Center)
             .layoutWeight(1)
             .height(42)
+            .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
             .onClick(() => {
               this.cancelTimePicker();
             })
@@ -3942,6 +4062,7 @@ struct Index {
             .textAlign(TextAlign.Center)
             .layoutWeight(1)
             .height(42)
+            .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
             .onClick(() => {
               this.confirmTimePicker();
             })
