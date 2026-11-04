@@ -15,6 +15,11 @@ void startupLog(const char* message, unsigned int result) {
 }
 
 void showStartupError(const char* message) {
+    const AppletType type = appletGetAppletType();
+    if (type != AppletType_Application && type != AppletType_SystemApplication) {
+        startupLog("error dialog unavailable in applet mode");
+        return;
+    }
     static ErrorApplicationConfig error;
     if (R_SUCCEEDED(errorApplicationCreate(&error, message,
         "Folio could not start. Check /switch/folio/startup.log on the SD card."))) {

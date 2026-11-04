@@ -26,6 +26,7 @@ typedef struct { int _; } PadState;
 typedef struct { u64 _; } Event;
 
 enum { PIXEL_FORMAT_RGBA_8888 = 0 };
+enum AppletType { AppletType_Application, AppletType_SystemApplication };
 enum { ViServiceType_Default = 0, ViScalingMode_FitToLayer = 0, HidNpadStyleSet_NpadStandard = 0 };
 enum { HidNpadButton_A = 1ULL << 0, HidNpadButton_B = 1ULL << 1, HidNpadButton_X = 1ULL << 2,
        HidNpadButton_Y = 1ULL << 3, HidNpadButton_L = 1ULL << 6, HidNpadButton_R = 1ULL << 7,
@@ -89,7 +90,7 @@ inline bool appletMainLoop() { return false; }
 inline Result romfsInit() { return 0; }
 inline void romfsExit() {}
 inline u32 hosversionGet() { return 0; }
-inline int appletGetAppletType() { return 0; }
+inline AppletType appletGetAppletType() { return AppletType_Application; }
 inline Result errorApplicationCreate(ErrorApplicationConfig*, const char*, const char*) { return 0; }
 inline Result errorApplicationShow(ErrorApplicationConfig*) { return 0; }
 inline Result timeInitialize() { return 0; }
