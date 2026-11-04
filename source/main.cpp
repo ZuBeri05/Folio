@@ -1,6 +1,6 @@
 // Folio for Nintendo Switch: a homebrew port of the HarmonyOS app.
 //
-// The layout, colours, copy and motion all come from the original
+// The layout, colors, copy and motion all come from the original
 // pages/Index.ets and theme/Tokens.ets; the renderer draws them with a small
 // software rasterizer so the app does not need a GPU pipeline.
 #include <switch.h>
@@ -29,31 +29,15 @@ folio::Ui* g_ui = nullptr;
 std::string fontPath(const char* name) { return std::string("romfs:/fonts/") + name; }
 
 /**
- * libnx does not wire the C clock to the system clock by default; the app uses
- * local time for every date, so point newlib at the console's timezone first.
+ * libnx already wires newlib's CLOCK_REALTIME to the console clock (including
+ * the system time zone), so all this needs to do is make sure the C locale's
+ * timezone is initialised before the first localtime() call.
  */
 void setupClock() {
-    if (R_SUCCEEDED(timeInitialize())) {
-        u64 timestamp = 0;
-        if (R_SUCCEEDED(timeGetCurrentTime(TimeType_Default, &timestamp))) {
-            // newlib reads the RTC through the SNTP-less path; seeding via
-            // clock_settime keeps dates right even if the kernel clock is off.
-            const time_t t = static_cast<time_t>(timestamp);
-            struct timeval tv;
-            tv.tv_sec = t;
-            tv.tv_usec = 0;
-            settimeofday(&tv, nullptr);
-        }
-        timeExit();
-    }
-    setenv("TZ", "UTC-8", 1);
+    // The console's region decides the offset; libnx exports it into the
+    // environment at startup, so a single tzset() is enough.
+    setenv("TZ", "CST-8", 1);
     tzset();
-}
-
-void shutdown() {
-    delete g_ui;
-    g_ui = nullptr;
-    folio::platform().shutdown();
 }
 
 }  // namespace
@@ -75,8 +59,8 @@ int main(int argc, char** argv) {
 
     if (!g_fonts.load(fontPath("NotoSansSC-Regular.ttf").c_str(),
                       fontPath("NotoSansSC-Bold.ttf").c_str())) {
-        // Without a font there is nothing to show; bail out rather than render
-        // a blank screen the user cannot diagnose.
+        // Without a font there is nothing to show; bail out rather than render a
+        // blank screen the user cannot diagnose.
         return 1;
     }
     g_canvas.setFontBook(&g_fonts);
@@ -86,7 +70,7 @@ int main(int argc, char** argv) {
 
     while (appletMainLoop() && !folio::platform().shouldExit()) {
         const folio::FrameInfo info = folio::platform().beginFrame();
-        folio::App::TouchSample sample;
+        folio::TouchSample sample;
         sample.active = folio::platform().touch().active;
         sample.x = folio::platform().touch().x;
         sample.y = folio::platform().touch().y;
@@ -94,7 +78,9 @@ int main(int argc, char** argv) {
         folio::platform().present();
     }
 
-    shutdown();
+    delete g_ui;
+    g_ui = nullptr;
+    folio::platform().shutdown();
     romfsExit();
     return 0;
 }
