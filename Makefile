@@ -25,7 +25,7 @@ APP_VERSION := 1.1.2
 #---------------------------------------------------------------------------------
 ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS  := -g -Wall -O2 -ffunction-sections -fdata-sections \
+CFLAGS  := -g -Wall -Werror=uninitialized -Werror=init-self -O2 -ffunction-sections -fdata-sections \
            $(ARCH) $(DEFINES)
 
 CFLAGS  += $(INCLUDE) -D__SWITCH__

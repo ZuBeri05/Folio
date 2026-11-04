@@ -167,7 +167,7 @@ std::string I18n::locale(const std::string& lang) {
 std::string I18n::todayLabel(const std::string& lang, long long now) {
     const DateParts p = localParts(now);
     // Mirrors localizedToday(): Intl long date with the comma swapped for a dot.
-    const std::string wd = wd;
+    const std::string wd = weekdaysFor(lang)[p.weekday];
     const std::string month = monthsFor(lang)[p.month - 1];
     if (lang == "en") {
         return wd + ", " + month + " " + std::to_string(p.day) + ", " + std::to_string(p.year) +

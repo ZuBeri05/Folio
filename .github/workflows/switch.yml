@@ -12,7 +12,21 @@ permissions:
   contents: write
 
 jobs:
+  startup-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Verify startup dates
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror=uninitialized -Werror=init-self \
+            -Isource tools/check_startup_dates.cpp source/services/i18n.cpp \
+            source/domain/dates.cpp -o /tmp/check-startup-dates
+          TZ=UTC /tmp/check-startup-dates
+
   build:
+    needs: startup-check
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
     steps:
