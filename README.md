@@ -61,6 +61,7 @@ ArkUI 的 `animateTo({curve}) { x = v }` 在 C++ 里对应 `Anim` 类：
 - 阴影是高斯衰减，模糊走可分离盒式模糊；
 - 文字用 stb_truetype 按需栅格化字形并缓存，字号按 em 映射（`ScaleForMappingEmToPixels`）；
 - 图标是从原版 SVG 压平的折线数据（`source/gen/icons.h`），自带原始颜色，任意尺寸都清晰。
+- 今日卡片、已记列表和记录页的长标题持续向左循环滚动；短标题保持静止。
 
 字体是 Noto Sans SC（OFL），只保留 GB2312 汉字、拉丁、假名、韩文与常用标点，两份合计约 4.9 MB。
 

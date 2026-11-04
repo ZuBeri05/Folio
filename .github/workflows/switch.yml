@@ -22,26 +22,30 @@ jobs:
       - name: Show toolchain
         run: |
           echo "DEVKITPRO=$DEVKITPRO"
-          aarch64-none-elf-gcc --version | head -1
+          "$DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc" --version | head -1
           cat $DEVKITPRO/libnx/switch.specs
 
       - name: Build NRO
         run: make -j"$(nproc)" V=1
 
-      - name: Inspect RomFS embedding
+      - name: Verify embedded fonts
         run: |
-          ls -la res/fonts
-          echo "--- nro size ---"
-          ls -la folio.nro
-          echo "--- asset header ---"
           python3 - <<'PY'
-          d = open('folio.nro','rb').read()
+          from pathlib import Path
           import struct
-          magic, size, hdrsize = struct.unpack('<III', d[4:16])
-          print('magic off', hex(size), 'hdr', hdrsize, 'len', len(d))
-          print('NRO0 at 16:', d[16:20])
-          # read the first asset header entry
-          print('tail ascii:', d[-64:][:40])
+          data = Path('folio.nro').read_bytes()
+          assert data[16:20] == b'NRO0', 'Invalid NRO header'
+          asset_start = struct.unpack_from('<I', data, 24)[0]
+          assert data[asset_start:asset_start + 4] == b'ASET', 'Missing NRO assets'
+          romfs_offset, romfs_size = struct.unpack_from('<QQ', data, asset_start + 40)
+          romfs_start = asset_start + romfs_offset
+          assert romfs_size > 0, 'Empty RomFS'
+          assert romfs_start + romfs_size <= len(data), 'Truncated RomFS'
+          romfs = data[romfs_start:romfs_start + romfs_size]
+          for font in sorted(Path('res/fonts').glob('*.ttf')):
+              assert font.read_bytes() in romfs, f'{font.name} missing from RomFS'
+              print(f'Embedded: {font.name} ({font.stat().st_size:,} bytes)')
+          print(f'NRO: {len(data):,} bytes; RomFS: {romfs_size:,} bytes')
           PY
 
       - name: Upload NRO

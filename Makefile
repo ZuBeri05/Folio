@@ -47,9 +47,6 @@ export NM  := $(DEVKITA64)/bin/aarch64-none-elf-nm
 
 LIBS    := -lnx
 
-# Embed res/ as a RomFS so fonts ship inside the .nro (romfsInit reads them).
-NROFLAGS := --romfsdir=$(ROMFSDIR)
-
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 
 #---------------------------------------------------------------------------------
@@ -57,7 +54,6 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
 export OUTPUT := $(CURDIR)/$(TARGET)
-export ROMFSDIR := $(CURDIR)/$(ROMFS)
 export TOPDIR := $(CURDIR)
 
 export VPATH := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
@@ -98,7 +94,8 @@ DEPENDS := $(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 all: $(OUTPUT).nro
 
-$(OUTPUT).nro : $(OUTPUT).elf
+$(OUTPUT).nro : $(OUTPUT).elf $(OUTPUT).nacp
+	elf2nro $< $@ --romfsdir="$(TOPDIR)/$(ROMFS)" --nacp="$(OUTPUT).nacp" --icon="$(APP_ICON)"
 $(OUTPUT).elf : $(OFILES)
 
 -include $(DEPENDS)
