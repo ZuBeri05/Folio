@@ -10,7 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.view.WindowCompat
 import com.jiesheng.folio.services.ReminderService
-import com.jiesheng.folio.ui.FolioApp
+import com.jiesheng.folio.ui.FolioEntry
 import com.jiesheng.folio.ui.FolioState
 
 class MainActivity : ComponentActivity() {
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val scope = rememberCoroutineScope()
             val state = androidx.compose.runtime.remember { FolioState(applicationContext, scope) }
-            FolioApp(state)
+            FolioEntry(state)
         }
     }
 

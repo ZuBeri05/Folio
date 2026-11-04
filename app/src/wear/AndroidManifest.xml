@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Wear OS 3 起才有的交互模型 -->
+    <uses-feature android:name="android.hardware.type.watch" />
+
+    <!-- 手表上没有「横屏」，也不需要用软键盘把整个窗口顶上去 -->
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Folio">
+            <!-- 手表应用由表盘列表直接启动，不需要 LAUNCHER 分类 -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

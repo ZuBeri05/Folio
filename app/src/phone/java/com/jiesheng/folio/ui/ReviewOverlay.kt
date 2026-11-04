@@ -319,17 +319,18 @@ private fun GradeCards(state: FolioState) {
                 }
             }
         } else {
-            // 2×2：每张卡 48% 宽，底下留 10
+            // 2×2：两列严格等宽。用 weight 而不是 fillMaxWidth(0.48f)——
+            // 后者是按「剩余空间」算的，第二张只会拿到 48%×52%，右边会明显比左边窄。
             Column {
                 for (row in 0..1) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         for (col in 0..1) {
-                            Box(modifier = Modifier.fillMaxWidth(0.48f)) {
+                            Box(modifier = Modifier.weight(1f)) {
                                 GradeCard(state, row * 2 + col + 1)
                             }
                         }

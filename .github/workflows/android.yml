@@ -27,13 +27,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: ./gradlew testPhoneDebugUnitTest --stacktrace
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace
+      - name: Build APKs (phone + wear, debug + release)
+        run: ./gradlew assemblePhoneDebug assemblePhoneRelease assembleWearDebug assembleWearRelease --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -49,12 +46,28 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
+      - name: Upload wear debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: folio-wear-debug-apk
+          path: app/build/outputs/apk/wear/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload wear release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: folio-wear-release-apk
+          path: app/build/outputs/apk/wear/release/*.apk
+          if-no-files-found: error
+
       # 打 tag 就自动发 Release，把签名好的 APK 挂上去
       - name: Attach APKs to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/phone/release/*.apk
+            app/build/outputs/apk/wear/release/*.apk
+            app/build/outputs/apk/phone/debug/*.apk
+            app/build/outputs/apk/wear/debug/*.apk
           generate_release_notes: true

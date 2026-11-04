@@ -33,6 +33,28 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    /**
+     * 手机版和手表版共用同一个模块：
+     * - 逻辑层（domain/、data/、services/）和动效编排（ui/FolioState.kt、theme/Motion）在 src/main，
+     *   两边是同一份代码，动画不可能各写一份走出去；
+     * - 界面层各写一份：src/phone（原来的四页 + 浮层）和 src/wear（表盘式重排版）。
+     */
+    flavorDimensions += "device"
+    productFlavors {
+        create("phone") {
+            dimension = "device"
+            applicationId = "com.jiesheng.folio"
+            versionNameSuffix = ""
+        }
+        create("wear") {
+            dimension = "device"
+            applicationId = "com.jiesheng.folio.wear"
+            // Wear OS 3 起才有现在的表盘交互模型
+            minSdk = 30
+            versionNameSuffix = "-wear"
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -49,7 +71,13 @@ android {
     applicationVariants.all {
         outputs.all {
             val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output.outputFileName = "folio-${versionName}-${name}.apk"
+            val flavor = flavorName
+            val type = buildType.name
+            // phone 叫 folio-<版本>-<类型>，wear 加个 -wear 前缀区分。
+            // AGP 会把 versionNameSuffix 合进 versionName，这里先去掉，避免文件名重复。
+            val prefix = if (flavor == "wear") "folio-wear" else "folio"
+            val baseVersion = (versionName ?: "1.1.2").removeSuffix("-wear")
+            output.outputFileName = "$prefix-$baseVersion-$type.apk"
         }
     }
 
@@ -83,6 +111,11 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+
+    // 手表那套组件只在 wear flavor 里编进来，手机包不会变大
+    "wearImplementation"("androidx.wear.compose:compose-material3:1.5.6")
+    "wearImplementation"("androidx.wear.compose:compose-foundation:1.5.6")
+    "wearImplementation"("androidx.wear:wear:1.3.0")
 
     testImplementation("junit:junit:4.13.2")
 }
