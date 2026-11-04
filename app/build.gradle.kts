@@ -28,8 +28,9 @@ android {
         applicationId = "com.jiesheng.folio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1000003
-        versionName = "1.1.2"
+        // 加了 Wear OS 版，作为一次功能更新升到 1.2.0
+        versionCode = 1002000
+        versionName = "1.2.0"
         vectorDrawables.useSupportLibrary = true
     }
 

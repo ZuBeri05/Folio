@@ -31,8 +31,8 @@ everything stays on the device.
 
 | 文件 | 平台 |
 |---|---|
-| `folio-<版本>-release.apk` | 手机 / 平板 |
-| `folio-wear-<版本>-release.apk` | Wear OS 手表 |
+| `folio-1.2.0-release.apk` | 手机 / 平板 |
+| `folio-wear-1.2.0-release.apk` | Wear OS 手表 |
 
 Release 包用仓库里的 `app/keystore/folio-release.jks` 签名，和 CI 打出来的包一致，
 所以后续版本可以直接覆盖安装。Debug 包也在 Release 里附了一份，方便对照。

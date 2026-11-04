@@ -32,19 +32,33 @@ jobs:
       - name: Build APKs (phone + wear, debug + release)
         run: ./gradlew assemblePhoneDebug assemblePhoneRelease assembleWearDebug assembleWearRelease --stacktrace
 
-      # 开了 flavor 之后产物在 apk/<flavor>/<type>/ 下；release 和 debug 分开上传
-      - name: Upload debug APKs
+      # 手机 / 手表分开，debug / release 也分开：四个独立 artifact，免得下载下来还要自己认
+      - name: Upload phone release APK
         uses: actions/upload-artifact@v4
         with:
-          name: folio-debug-apks
-          path: app/build/outputs/apk/*/debug/*.apk
+          name: folio-phone-release-apk
+          path: app/build/outputs/apk/phone/release/*.apk
           if-no-files-found: error
 
-      - name: Upload release APKs
+      - name: Upload wear release APK
         uses: actions/upload-artifact@v4
         with:
-          name: folio-release-apks
-          path: app/build/outputs/apk/*/release/*.apk
+          name: folio-wear-release-apk
+          path: app/build/outputs/apk/wear/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload phone debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: folio-phone-debug-apk
+          path: app/build/outputs/apk/phone/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload wear debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: folio-wear-debug-apk
+          path: app/build/outputs/apk/wear/debug/*.apk
           if-no-files-found: error
 
       # 打 tag 就自动发 Release，把签名好的 APK 挂上去
