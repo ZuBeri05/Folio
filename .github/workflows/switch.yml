@@ -26,7 +26,23 @@ jobs:
           cat $DEVKITPRO/libnx/switch.specs
 
       - name: Build NRO
-        run: make -j"$(nproc)"
+        run: make -j"$(nproc)" V=1
+
+      - name: Inspect RomFS embedding
+        run: |
+          ls -la res/fonts
+          echo "--- nro size ---"
+          ls -la folio.nro
+          echo "--- asset header ---"
+          python3 - <<'PY'
+          d = open('folio.nro','rb').read()
+          import struct
+          magic, size, hdrsize = struct.unpack('<III', d[4:16])
+          print('magic off', hex(size), 'hdr', hdrsize, 'len', len(d))
+          print('NRO0 at 16:', d[16:20])
+          # read the first asset header entry
+          print('tail ascii:', d[-64:][:40])
+          PY
 
       - name: Upload NRO
         uses: actions/upload-artifact@v4
