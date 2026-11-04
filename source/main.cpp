@@ -53,6 +53,12 @@ const char* runApp() {
     g_frame.resize(folio::platform().pixelWidth(), folio::platform().pixelHeight());
     g_canvas.attach(&g_frame);
     folio::platformSetFrameBitmap(&g_frame);
+    g_canvas.clear(folio::Color(1.f, 0.98f, 0.94f, 1.f));
+    g_canvas.fillRoundRect(folio::Rect(580.f, 330.f, 120.f, 60.f), 24.f,
+                          folio::Color(1.f, 0.77f, 0.19f, 1.f));
+    folio::startupLog("present startup background");
+    folio::platform().present();
+    folio::startupLog("startup background presented");
 
     folio::startupLog("load fonts");
     if (!g_fonts.load(fontPath("NotoSansSC-Regular.ttf").c_str(),
