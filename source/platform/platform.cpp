@@ -1,14 +1,23 @@
 #include "platform/platform.h"
+#include "platform/startup.h"
 
 #include <switch.h>
 
 #include <cstring>
+#include <ctime>
 
 namespace folio {
 
 namespace {
 
 Framebuffer g_fb;
+ViDisplay g_display;
+ViLayer g_layer;
+NWindow g_window;
+bool g_viReady = false;
+bool g_displayReady = false;
+bool g_layerReady = false;
+bool g_windowReady = false;
 bool g_fbReady = false;
 Bitmap* g_frame = nullptr;
 unsigned long long g_freq = 0;
@@ -22,28 +31,41 @@ Platform& platform() {
 }
 
 long long Platform::nowMs() {
-    if (g_freq == 0) return 0;
-    return static_cast<long long>(armTicksToNs(armGetSystemTick()) / 1000000ULL);
+    timespec current{};
+    if (clock_gettime(CLOCK_REALTIME, &current) != 0) return 0;
+    return static_cast<long long>(current.tv_sec) * 1000LL + current.tv_nsec / 1000000LL;
 }
 
 bool Platform::init() {
-    hidInitialize();
+    startupLog("configure input");
+    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     hidInitializeTouchScreen();
     padInitializeDefault(&g_pad);
     g_freq = armGetSystemTickFreq();
     lastTick_ = armGetSystemTick();
 
-    NWindow* win = nwindowGetDefault();
+    auto check = [](const char* stage, Result result) {
+        startupLog(stage, result);
+        return R_SUCCEEDED(result);
+    };
+    if (!check("viInitialize", viInitialize(ViServiceType_Default))) return false;
+    g_viReady = true;
+    if (!check("viOpenDefaultDisplay", viOpenDefaultDisplay(&g_display))) return false;
+    g_displayReady = true;
+    if (!check("viCreateLayer", viCreateLayer(&g_display, &g_layer))) return false;
+    g_layerReady = true;
+    if (!check("viSetLayerScalingMode", viSetLayerScalingMode(&g_layer, ViScalingMode_FitToLayer))) return false;
+    if (!check("nwindowCreateFromLayer", nwindowCreateFromLayer(&g_window, &g_layer))) return false;
+    g_windowReady = true;
     const u32 width = 1280;
     const u32 height = 720;
-    if (R_FAILED(nwindowSetDimensions(win, width, height))) {
+    if (!check("framebufferCreate", framebufferCreate(&g_fb, &g_window, width, height, PIXEL_FORMAT_RGBA_8888, 2))) {
         return false;
     }
-    if (R_FAILED(framebufferCreate(&g_fb, win, width, height, PIXEL_FORMAT_RGBA_8888, 2))) {
-        return false;
-    }
-    framebufferMakeLinear(&g_fb);
     g_fbReady = true;
+    if (!check("framebufferMakeLinear", framebufferMakeLinear(&g_fb))) {
+        return false;
+    }
     pixelWidth_ = static_cast<int>(width);
     pixelHeight_ = static_cast<int>(height);
     // One vp is (panel width / logical width) pixels, so the whole UI scales up.
@@ -52,9 +74,26 @@ bool Platform::init() {
 }
 
 void Platform::shutdown() {
+    g_frame = nullptr;
     if (g_fbReady) {
         framebufferClose(&g_fb);
         g_fbReady = false;
+    }
+    if (g_windowReady) {
+        nwindowClose(&g_window);
+        g_windowReady = false;
+    }
+    if (g_layerReady) {
+        viCloseLayer(&g_layer);
+        g_layerReady = false;
+    }
+    if (g_displayReady) {
+        viCloseDisplay(&g_display);
+        g_displayReady = false;
+    }
+    if (g_viReady) {
+        viExit();
+        g_viReady = false;
     }
 }
 

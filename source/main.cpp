@@ -9,12 +9,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
+#include <new>
 #include <string>
 
 #include "core/canvas.h"
 #include "core/font.h"
 #include "data/store.h"
 #include "platform/platform.h"
+#include "platform/startup.h"
 #include "ui/app.h"
 #include "ui/ui.h"
 
@@ -24,7 +27,6 @@ folio::Bitmap g_frame;
 folio::Canvas g_canvas;
 folio::FontBook g_fonts;
 folio::App g_app;
-folio::Ui* g_ui = nullptr;
 
 std::string fontPath(const char* name) { return std::string("romfs:/fonts/") + name; }
 
@@ -40,47 +42,74 @@ void setupClock() {
     tzset();
 }
 
+const char* runApp() {
+    setupClock();
+    folio::Store::init();
+
+    if (!folio::platform().init()) {
+        return "Folio: display initialization failed.";
+    }
+    folio::startupLog("allocate drawing buffer");
+    }
+    g_frame.resize(folio::platform().pixelWidth(), folio::platform().pixelHeight());
+    g_canvas.attach(&g_frame);
+    folio::platformSetFrameBitmap(&g_frame);
+
+    folio::startupLog("load fonts");
+    if (!g_fonts.load(fontPath("NotoSansSC-Regular.ttf").c_str(),
+                      fontPath("NotoSansSC-Bold.ttf").c_str())) {
+        return "Folio: unable to read embedded fonts.";
+    }
+    g_canvas.setFontBook(&g_fonts);
+
+    folio::startupLog("load application data");
+    g_app.init(&g_fonts);
+    folio::Ui ui(g_canvas, g_fonts);
+    bool firstFrame = true;
+
+    while (appletMainLoop() && !folio::platform().shouldExit()) {
+        if (firstFrame) folio::startupLog("read first input");
+        const folio::FrameInfo info = folio::platform().beginFrame();
+        folio::TouchSample sample;
+        sample.active = folio::platform().touch().active;
+        sample.x = folio::platform().touch().x;
+        sample.y = folio::platform().touch().y;
+        if (firstFrame) folio::startupLog("draw first frame");
+        g_app.frame(g_canvas, ui, info.dtMs, sample, info.widthVp, info.heightVp);
+        if (firstFrame) folio::startupLog("present first frame");
+        folio::platform().present();
+        if (firstFrame) folio::startupLog("first frame presented");
+        firstFrame = false;
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
-    romfsInit();
-    setupClock();
-    folio::Store::init();
-
-    if (!folio::platform().init()) {
+    folio::startupLog("main entered");
+    const Result romfsResult = romfsInit();
+    folio::startupLog("romfsInit", romfsResult);
+    if (R_FAILED(romfsResult)) {
+        folio::showStartupError("Folio: unable to open embedded fonts (RomFS).");
         return 1;
     }
-    g_frame.resize(folio::platform().pixelWidth(), folio::platform().pixelHeight());
-    g_canvas.attach(&g_frame);
-    folio::platformSetFrameBitmap(&g_frame);
-
-    if (!g_fonts.load(fontPath("NotoSansSC-Regular.ttf").c_str(),
-                      fontPath("NotoSansSC-Bold.ttf").c_str())) {
-        // Without a font there is nothing to show; bail out rather than render a
-        // blank screen the user cannot diagnose.
-        return 1;
+    const char* failure = nullptr;
+    try {
+        failure = runApp();
+    } catch (const std::bad_alloc&) {
+        failure = "Folio: not enough memory to start.";
+    } catch (const std::exception& error) {
+        folio::startupLog(error.what());
+        failure = "Folio: an error occurred during startup or rendering.";
     }
-    g_canvas.setFontBook(&g_fonts);
-
-    g_app.init(&g_fonts);
-    g_ui = new folio::Ui(g_canvas, g_fonts);
-
-    while (appletMainLoop() && !folio::platform().shouldExit()) {
-        const folio::FrameInfo info = folio::platform().beginFrame();
-        folio::TouchSample sample;
-        sample.active = folio::platform().touch().active;
-        sample.x = folio::platform().touch().x;
-        sample.y = folio::platform().touch().y;
-        g_app.frame(g_canvas, *g_ui, info.dtMs, sample, info.widthVp, info.heightVp);
-        folio::platform().present();
-    }
-
-    delete g_ui;
-    g_ui = nullptr;
+    if (failure != nullptr) folio::startupLog(failure);
     folio::platform().shutdown();
     romfsExit();
-    return 0;
+    if (failure != nullptr) folio::showStartupError(failure);
+    else folio::startupLog("normal exit");
+    return failure != nullptr ? 1 : 0;
 }

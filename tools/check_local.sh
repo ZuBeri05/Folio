@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 
 g++ -std=gnu++17 -Wall -Wextra -Wno-unused-parameter -fsyntax-only \
     -Isource -Itools/switch_stub -D__SWITCH__ -DFOLIO_HOST=0 \
-    source/main.cpp source/platform/platform.cpp
+    source/main.cpp source/platform/platform.cpp source/platform/startup.cpp
 
 g++ -std=gnu++17 -Wall -Wextra -Wno-unused-parameter -fsyntax-only \
     -Isource -D__SWITCH__ -DFOLIO_HOST=1 \

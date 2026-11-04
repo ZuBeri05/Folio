@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
@@ -54,28 +55,39 @@ FontFace::~FontFace() {
 }
 
 bool FontFace::loadMemory(const void* data, size_t size) {
-    data_ = static_cast<unsigned char*>(std::malloc(size));
-    if (data_ == nullptr) return false;
-    std::memcpy(data_, data, size);
-    info_ = new ::stbtt_fontinfo();
-    return stbtt_InitFont(info_, data_, 0) != 0;
+    if (data == nullptr || size == 0) return false;
+    std::unique_ptr<unsigned char, decltype(&std::free)> loaded(
+        static_cast<unsigned char*>(std::malloc(size)), &std::free);
+    if (!loaded) return false;
+    std::memcpy(loaded.get(), data, size);
+    auto info = std::make_unique<::stbtt_fontinfo>();
+    if (stbtt_InitFont(info.get(), loaded.get(), 0) == 0) return false;
+    delete info_;
+    std::free(data_);
+    cache_.clear();
+    data_ = loaded.release();
+    info_ = info.release();
+    return true;
 }
 
 bool FontFace::loadFile(const char* path) {
-    FILE* f = std::fopen(path, "rb");
-    if (f == nullptr) return false;
-    std::fseek(f, 0, SEEK_END);
-    const long size = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    if (size <= 0) {
-        std::fclose(f);
-        return false;
-    }
-    std::vector<unsigned char> buffer(static_cast<size_t>(size));
-    const size_t read = std::fread(buffer.data(), 1, buffer.size(), f);
-    std::fclose(f);
-    if (read != buffer.size()) return false;
-    return loadMemory(buffer.data(), buffer.size());
+    std::unique_ptr<FILE, decltype(&std::fclose)> file(std::fopen(path, "rb"), &std::fclose);
+    if (!file) return false;
+    if (std::fseek(file.get(), 0, SEEK_END) != 0) return false;
+    const long size = std::ftell(file.get());
+    if (size <= 0 || std::fseek(file.get(), 0, SEEK_SET) != 0) return false;
+    std::unique_ptr<unsigned char, decltype(&std::free)> loaded(
+        static_cast<unsigned char*>(std::malloc(static_cast<size_t>(size))), &std::free);
+    if (!loaded) return false;
+    if (std::fread(loaded.get(), 1, size, file.get()) != static_cast<size_t>(size)) return false;
+    auto info = std::make_unique<::stbtt_fontinfo>();
+    if (stbtt_InitFont(info.get(), loaded.get(), 0) == 0) return false;
+    delete info_;
+    std::free(data_);
+    cache_.clear();
+    data_ = loaded.release();
+    info_ = info.release();
+    return true;
 }
 
 float FontFace::ascent(float pixelSize) const {
