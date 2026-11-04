@@ -34,11 +34,13 @@ CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 
 LDFLAGS = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-# switch_rules leaves LD to base_rules, which resolves to the host linker when
-# a project is C++-only; pin it to the cross toolchain so linking uses aarch64.
+# switch_rules picks LD from base_rules, which resolves to the host linker for a
+# C++-only project; pin the whole toolchain to DEVKITPRO/devkitA64 (DEVKITA64 is
+# not exported by the official rules, so derive it here).
+DEVKITA64 := $(DEVKITPRO)/devkitA64
 export CC  := $(DEVKITA64)/bin/aarch64-none-elf-gcc
 export CXX := $(DEVKITA64)/bin/aarch64-none-elf-g++
-export LD  := $(CXX)
+export LD  := $(DEVKITA64)/bin/aarch64-none-elf-g++
 export AS  := $(DEVKITA64)/bin/aarch64-none-elf-as
 export AR  := $(DEVKITA64)/bin/aarch64-none-elf-ar
 export NM  := $(DEVKITA64)/bin/aarch64-none-elf-nm
