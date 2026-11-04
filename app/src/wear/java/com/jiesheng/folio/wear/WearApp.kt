@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -80,13 +82,23 @@ fun WearApp(state: FolioState) {
             .fillMaxSize()
             .background(hexColor(state.pageBg()))
     ) {
+        val shortSide = minOf(maxWidth, maxHeight)
         state.vpWidth = maxWidth.value
         state.vpHeight = maxHeight.value
         // 手表永远是单列
         state.isWide = false
         state.isTablet = false
 
-        WearHome(state)
+        // 圆屏安全区：按内切正方形取（短边 × 0.78），上下左右都不会碰到表壳弧线。
+        // 纵向稍微多给一点（0.88）用于放得下「标题 + 条目 + 按钮 + 番茄钟」。
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .width(shortSide * 0.78f)
+                .height(shortSide * 0.88f)
+        ) {
+            WearHome(state)
+        }
 
         if (state.showComposer) WearComposer(state)
         if (state.showReview) WearReview(state)
@@ -426,7 +438,7 @@ private fun WearEmptyToday(state: FolioState, titleIn: Float, progress: Float) {
             color = Tokens.inkSoft,
             textAlign = TextAlign.Center,
             modifier = Modifier.graphicsLayer {
-                translationX = (1f - titleIn) * 0f * density /* DEBUG */
+                translationX = (1f - titleIn) * -state.mv(40f) * density
                 alpha = 0.3f + 0.7f * minOf(1f, titleIn * 1.8f)
             }
         )
@@ -452,6 +464,13 @@ private fun WearEmptyToday(state: FolioState, titleIn: Float, progress: Float) {
                 },
             onClick = { state.openComposer() }
         )
+        // 没有待复习时也要能进番茄钟：之前在「有条目」的分支里，
+        // 空列表就整个走不到那段，番茄钟入口等于消失了。
+        if (state.focusRunning) {
+            WearMiniFocus(state)
+        } else {
+            WearFocusEntry(state)
+        }
     }
 }
 
@@ -462,7 +481,8 @@ private fun WearRecords(state: FolioState) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            // 上下各留出一截：头顶和下巴是圆屏收得最狠的地方，标题贴上去会被切
+            .padding(horizontal = 14.dp, vertical = 26.dp),
         horizontalAlignment = Alignment.Start
     ) {
         Row(
@@ -497,45 +517,47 @@ private fun WearRecords(state: FolioState) {
             return
         }
 
-        val pager = rememberPagerState(pageCount = { items.size })
-        VerticalPager(
-            state = pager,
+        // 记录是一条条排下来、整屏可滚动的列表。
+        // 之前用 VerticalPager，每个 item 都占满整页高度，一屏只能看见一条，
+        // 卡片之间的空白大得像方块，看起来就是「方形 UI、显示不全」。
+        LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
-        ) { index ->
-            val item = items[index]
-            val progress = state.recIn[minOf(index, 11)].v("wearRec$index")
-            val subject = state.findSubject(item.subjectId)
-            Box(modifier = Modifier.padding(vertical = 3.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        translationX = (1f - progress) * -state.mv(22f) * density
-                        alpha = progress
-                    }
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Tokens.surface)
-                    .pointerInput(item.id) {
-                        detectTapGestures(onTap = { state.openItemActions(item) })
-                    }
-                    .padding(horizontal = 10.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)
+        ) {
+            itemsIndexed(items = items, key = { _, it -> it.id }) { index, item ->
+                val progress = state.recIn[minOf(index, 11)].v("wearRec$index")
+                val subject = state.findSubject(item.subjectId)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            translationX = (1f - progress) * -state.mv(22f) * density
+                            alpha = progress
+                        }
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Tokens.surface)
+                        .pointerInput(item.id) {
+                            detectTapGestures(onTap = { state.openItemActions(item) })
+                        }
+                        .padding(horizontal = 11.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 Box(
                     modifier = Modifier
-                        .size(6.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
                         .background(hexColor(subject.color))
                 )
                 Column(modifier = Modifier
                     .weight(1f)
-                    .padding(start = 7.dp)) {
-                    Text(text = subject.name, fontSize = 8.sp, color = hexColor(subject.color))
+                    .padding(start = 8.dp)) {
+                    Text(text = subject.name, fontSize = 9.sp, color = hexColor(subject.color))
                     Text(
                         text = item.title,
-                        fontSize = 11.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium,
                         color = Tokens.ink,
                         maxLines = 2,
@@ -545,8 +567,14 @@ private fun WearRecords(state: FolioState) {
                 }
                 Text(
                     text = state.shortDate(item.nextReviewAt),
-                    fontSize = 8.sp,
-                    color = Tokens.muted
+                    fontSize = 9.sp,
+                    color = Tokens.muted,
+                    // 固定宽度 + 左边留白，标题再长也不会和日期贴在一起
+                    modifier = Modifier
+                        .padding(start = 12.dp)
+                        .width(34.dp),
+                    textAlign = TextAlign.End,
+                    maxLines = 1
                 )
             }
             }
@@ -599,7 +627,7 @@ private fun WearSettings(state: FolioState) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -607,93 +635,124 @@ private fun WearSettings(state: FolioState) {
                 0 -> {
                     Text(
                         text = state.t("focusSettingTitle"),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Tokens.muted
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Tokens.inkSoft,
+                        textAlign = TextAlign.Center
                     )
-                    Row(
+                    // 当前值单独放大，一眼能看见
+                    Text(
+                        text = state.minutesLabel(state.settings.focusMinutes),
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = hexColor(state.themeAccent(state.settings.themeIndex)),
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    // 三个选项排一行在圆屏上也会顶到边，同样 2×2（最后一格留空）
+                    Column(
                         modifier = Modifier.padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        verticalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
-                        listOf(15, 25, 45).forEach { value ->
-                            val selected = state.settings.focusMinutes == value
-                            WearPill(
-                                text = value.toString(),
-                                height = 26.dp,
-                                fontSize = 10.sp,
-                                background = if (selected) Tokens.yellowSoft else Tokens.surface,
-                                foreground = hexColor(if (selected) "#6C4B00" else "#8D7F6C"),
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                paddingHorizontal = 10.dp,
-                                onClick = { state.updateFocusMinutes(value) }
-                            )
+                        for (row in 0..1) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                for (col in 0..1) {
+                                    val value = listOf(15, 25, 45, 60)[row * 2 + col]
+                                    val selected = state.settings.focusMinutes == value
+                                    WearPill(
+                                        text = value.toString(),
+                                        height = 32.dp,
+                                        fontSize = 13.sp,
+                                        background = if (selected) Tokens.yellowSoft else Tokens.surface,
+                                        foreground = hexColor(if (selected) "#6C4B00" else "#8D7F6C"),
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        paddingHorizontal = 12.dp,
+                                        onClick = { state.updateFocusMinutes(value) }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
                 1 -> {
                     Text(
                         text = state.t("retentionTitle"),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Tokens.muted
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Tokens.inkSoft,
+                        textAlign = TextAlign.Center
                     )
                     Text(
                         text = Math.round(state.settings.targetRetention * 100).toString() + "%",
-                        fontSize = 22.sp,
+                        fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                         color = hexColor(state.themeAccent(state.settings.themeIndex))
                     )
-                    Row(
+                    // 4 个选项排一行放不进圆屏（最右边那个会被切掉），改成 2×2
+                    Column(
                         modifier = Modifier.padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf(80, 85, 90, 95).forEach { value ->
-                            val selected = Math.round(state.settings.targetRetention * 100).toInt() == value
-                            WearPill(
-                                text = value.toString(),
-                                height = 24.dp,
-                                fontSize = 9.sp,
-                                background = if (selected) Tokens.yellowSoft else Tokens.surface,
-                                foreground = hexColor(if (selected) "#6C4B00" else "#8D7F6C"),
-                                paddingHorizontal = 8.dp,
-                                onClick = {
-                                    state.retentionUnlocked = true
-                                    state.updateRetention(value)
-                                    state.persist()
+                        for (row in 0..1) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                for (col in 0..1) {
+                                    val value = 80 + (row * 2 + col) * 5
+                                    val selected =
+                                        Math.round(state.settings.targetRetention * 100).toInt() == value
+                                    WearPill(
+                                        text = "$value%",
+                                        height = 30.dp,
+                                        fontSize = 12.sp,
+                                        background = if (selected) Tokens.yellowSoft else Tokens.surface,
+                                        foreground = hexColor(if (selected) "#6C4B00" else "#8D7F6C"),
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        paddingHorizontal = 12.dp,
+                                        onClick = {
+                                            state.retentionUnlocked = true
+                                            state.updateRetention(value)
+                                            state.persist()
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 }
                 else -> {
                     Text(
                         text = state.t("palette"),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Tokens.muted
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Tokens.inkSoft
                     )
-                    Row(
-                        modifier = Modifier.padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // 同样改成 2×2：四个色块排一行，最后一个会被圆屏裁掉
+                    Column(
+                        modifier = Modifier.padding(top = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        listOf(0, 1, 2, 3).forEach { index ->
-                            val selected = state.settings.themeIndex == index
-                            Box(
-                                modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(CircleShape)
-                                    .background(hexColor(state.themeAccent(index)))
-                                    .then(
-                                        if (selected) {
-                                            Modifier.padding(3.dp)
-                                        } else {
-                                            Modifier
-                                        }
+                        for (row in 0..1) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                for (col in 0..1) {
+                                    val index = row * 2 + col
+                                    val selected = state.settings.themeIndex == index
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            // 选中的多一圈描边，不然四个色块看起来一样
+                                            .border(
+                                                width = if (selected) 3.dp else 0.dp,
+                                                color = hexColor(state.themeAccent(index)),
+                                                shape = CircleShape
+                                            )
+                                            .padding(4.dp)
+                                            .clip(CircleShape)
+                                            .background(hexColor(state.themeAccent(index)))
+                                            .pointerInput(index) {
+                                                detectTapGestures(onTap = { state.updateTheme(index) })
+                                            }
                                     )
-                                    .pointerInput(index) {
-                                        detectTapGestures(onTap = { state.updateTheme(index) })
-                                    }
-                            )
+                                }
+                            }
                         }
                     }
                 }
@@ -1002,7 +1061,9 @@ private fun WearFocusClock(state: FolioState) {
         ),
         label = "wearRing"
     )
-    val diameter = 158.dp
+    // 进度环贴着屏幕边缘走：圆屏本身就是一个圆，让环顺着表壳画才像手表，
+    // 里面那一圈空间也就完整留给了时间、番茄和按钮。
+    val diameter = (minOf(state.vpWidth, state.vpHeight) - 6f).dp
 
     Box(
         modifier = Modifier
@@ -1078,80 +1139,77 @@ private fun WearFocusClock(state: FolioState) {
                 androidx.compose.foundation.Image(
                     painter = painterResource(R.drawable.tomato),
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                 )
                 if (state.focusRunning) {
                     Text(
                         text = state.focusClock(),
-                        fontSize = 26.sp,
+                        fontSize = 30.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (state.focusPaused) Tokens.muted else Tokens.ink,
                         modifier = Modifier.padding(top = 2.dp)
                     )
                     Text(
                         text = state.roundLabel(),
-                        fontSize = 8.sp,
+                        fontSize = 9.sp,
                         color = Tokens.muted,
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 } else {
                     Text(
                         text = state.minutesLabel(state.settings.focusMinutes),
-                        fontSize = 15.sp,
+                        fontSize = 19.sp,
                         fontWeight = FontWeight.Bold,
                         color = Tokens.ink,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                     Text(
                         text = state.t("focusTitle"),
-                        fontSize = 8.sp,
+                        fontSize = 9.sp,
                         color = Tokens.mutedSoft,
                         modifier = Modifier.padding(top = 2.dp)
                     )
                 }
-            }
-        }
 
-        // 操作：待机时是「开始专注」，跑起来是「暂停 / 结束」
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-            if (state.focusRunning) {
+                // 按钮放在环内，不用再跟环的边缘抢位置
                 Row(
-                    modifier = Modifier.padding(bottom = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    modifier = Modifier.padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    WearPill(
-                        text = if (state.focusPaused) state.t("focusResume") else state.t("focusPause"),
-                        height = 30.dp,
-                        fontSize = 9.5.sp,
-                        background = Tokens.surfaceSoft,
-                        foreground = Tokens.inkSoft,
-                        paddingHorizontal = 11.dp,
-                        onClick = {
-                            if (state.focusPaused) state.resumeFocus() else state.pauseFocus()
-                        }
-                    )
-                    WearPill(
-                        text = state.t("focusEnd"),
-                        height = 30.dp,
-                        fontSize = 9.5.sp,
-                        background = Tokens.surfaceSoft,
-                        foreground = Tokens.coral,
-                        paddingHorizontal = 11.dp,
-                        onClick = { state.stopFocusEarly() }
-                    )
+                    if (state.focusRunning) {
+                        WearPill(
+                            text = if (state.focusPaused) state.t("focusResume") else state.t("focusPause"),
+                            height = 30.dp,
+                            fontSize = 9.5.sp,
+                            background = Tokens.surfaceSoft,
+                            foreground = Tokens.inkSoft,
+                            paddingHorizontal = 10.dp,
+                            onClick = {
+                                if (state.focusPaused) state.resumeFocus() else state.pauseFocus()
+                            }
+                        )
+                        WearPill(
+                            text = state.t("focusEnd"),
+                            height = 30.dp,
+                            fontSize = 9.5.sp,
+                            background = Tokens.surfaceSoft,
+                            foreground = Tokens.coral,
+                            paddingHorizontal = 10.dp,
+                            onClick = { state.stopFocusEarly() }
+                        )
+                    } else {
+                        WearPill(
+                            text = state.t("focusStartCycle"),
+                            height = 32.dp,
+                            fontSize = 10.sp,
+                            background = hexColor(state.themeButton()),
+                            foreground = hexColor(state.themeInk()),
+                            fontWeight = FontWeight.Medium,
+                            paddingHorizontal = 15.dp,
+                            onClick = { state.startCycle() }
+                        )
+                    }
                 }
-            } else {
-                WearPill(
-                    text = state.t("focusStartCycle"),
-                    height = 34.dp,
-                    fontSize = 10.sp,
-                    background = hexColor(state.themeButton()),
-                    foreground = hexColor(state.themeInk()),
-                    fontWeight = FontWeight.Medium,
-                    paddingHorizontal = 18.dp,
-                    modifier = Modifier.padding(bottom = 14.dp),
-                    onClick = { state.startCycle() }
-                )
             }
         }
 
