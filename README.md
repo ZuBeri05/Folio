@@ -1,120 +1,102 @@
-# Folio Android · 结绳（安卓移植）
+# Folio Switch · 结绳（Switch 移植）
 
-鸿蒙版 Folio（`../`）的 Android 移植，用 **Kotlin + Jetpack Compose** 重写。
-目标是把原版的界面、节奏、配色和交互原封不动搬过来，不是"做一个类似的 App"。
+鸿蒙版 Folio（`../` HarmonyOS 7）的 Nintendo Switch 自制程序移植。
+界面、配色、文案、动效曲线都照抄原版 `pages/Index.ets` 与 `theme/Tokens.ets`。
 
-## 与原版的对应关系
+Switch 是固定 1280×720 的横屏设备，所以直接用原版的**平板分栏布局**：
+左侧 124vp 图标导航栏，右侧"今日复习 + 记一条"双栏，与平板横屏一致。
 
-| 鸿蒙版 | Android 版 | 说明 |
+## 安装
+
+1. 把 `folio.nro` 放到 SD 卡的 `switch/folio/` 目录（或任意 `switch/` 子目录）。
+2. 在 HBL / 自制系统里启动 Folio。
+3. 数据保存在 `sdmc:/switch/folio/data.json`，格式与原版 JSON 逐字段相同。
+
+操作：触摸屏直接点（与原版一致），`+` 退出。
+
+## 和原版的对应关系
+
+| 鸿蒙版 | Switch 版 |
+|---|---|
+| `pages/Index.ets` | `source/ui/app_*.cpp`（状态、动效、绘制）|
+| `theme/Tokens.ets` 颜色 | `source/ui/theme.cpp` 一字不改 |
+| `theme/Tokens.ets` 的 `Motion` | `source/ui/anim.cpp` 五个时长 + 七条曲线 |
+| `domain/fsrs/Fsrs.ts` | `source/domain/fsrs.cpp`，权重与公式完全一致 |
+| `domain/fsrs/Scheduling.ts` | 同文件，含逾期封顶 1.5× 与最长间隔截断 |
+| `domain/focus/Focus.ts` | `source/domain/focus.cpp` |
+| `services/I18n.ets` | `source/gen/i18n_tables.h`（脚本机械转换，6 语言 × 161 键）|
+| `data/Store.ets` | `source/data/store.cpp`，JSON 字段名相同 |
+| 系统日历提醒 | 去掉（自制程序没有日历权限），专注结束改用结算卡片提示 |
+
+## 动效
+
+原版所有动效由 `Motion` 的五档时长与七条曲线驱动，这里保留同一套：
+
+| 名称 | 原版 | Switch 实现 |
 |---|---|---|
-| `pages/Index.ets` | `ui/FolioState.kt` + `ui/*Page.kt` | 状态与交互逐段搬过来；页面拆成今日 / 记录 / 日历 / 设置 / 浮层几个文件 |
-| `theme/Tokens.ets` | `theme/Tokens.kt` | 颜色、动效刻度一字不改 |
-| `domain/fsrs/Fsrs.ts` | `domain/fsrs/Fsrs.kt` | FSRS-6，权重和公式完全一致 |
-| `domain/fsrs/Scheduling.ts` | `domain/fsrs/Scheduling.kt` | 含逾期奖励封顶（1.5×）与最长间隔截断 |
-| `domain/fsrs/Migration.ts` | `domain/fsrs/Migration.kt` | 旧数据迁移，判断条件一致 |
-| `domain/focus/Focus.ts` | `domain/focus/Focus.kt` | 番茄钟纯逻辑 |
-| `services/I18n.ets` | `services/I18nTables.kt` + `I18n.kt` | 6 种语言 × 161 个键，由脚本从原文件机械转换 |
-| `data/Store.ets` | `data/Store.kt` + `Codec.kt` | 同名 preferences（`jiesheng_app` / `app_data_v1`），JSON 结构完全相同 |
-| `services/ReminderService.ets` | `services/ReminderService.kt` | 见下方「提醒」一节 |
-| `theme/Tokens.ets` 里的 `Motion` | `theme/Tokens.kt` 的 `Motion` + `ui/Anim.kt` | ArkUI `animateTo` 的等价写法 |
+| `instant`/`quick`/`base`/`slow`/`page` | 110/170/260/380/520ms | 同名常量，值不变 |
+| `decel()` | cubic-bezier(0.05, 0.7, 0.1, 1) | 同一求解器（牛顿迭代） |
+| `accel()` / `standard()` | 见 README 原版 | 同上 |
+| `settle()` | interpolatingSpring(0,1,180,26) | 半隐式积分弹簧 |
+| `snap()` | interpolatingSpring(0,1,420,34) | 同上 |
+| `bounce()` | interpolatingSpring(0,1,340,20) | 同上 |
 
-数据 JSON 结构和鸿蒙版**逐字段相同**，所以两边数据可以直接互换。
+ArkUI 的 `animateTo({curve}) { x = v }` 在 C++ 里对应 `Anim` 类：
+目标值 + 本次曲线一起存，`cubic()` / `spring()` 各对应一次 `animateTo`，
+中途改目标从当前进度继续，弹簧不配时长。入场时序逐条照搬：
 
-## 动效怎么搬的
+| 页面 | 入场 |
+|---|---|
+| 今日 | 标题左 72、列表下 30、已记右 72，弹簧 settle，错峰 0/90/180ms |
+| 记录 | 时间轴竖线 0→1 生长，卡片从 −26 牵出，错峰 `min(i,8)×55ms` |
+| 日历 | 每行从 +48 撞入（bounce），行间隔 `min(55, 780/n)` |
+| 设置 | 5 张卡 左/下/右/左/下，逐张错 80ms |
+| 页面切换 | 离开 200ms（日历）/300ms（其它）accel，进入 decel，位移 24/52 |
 
-原版所有动效都由 `Motion` 里的 5 个时长刻度和 7 条曲线驱动，Android 版保留同一套：
+## 渲染
 
-| 名称 | 原版 | Android 实现 |
-|---|---|---|
-| `instant` / `quick` / `base` / `slow` / `page` | 110 / 170 / 260 / 380 / 520ms | 同名常量，值不变 |
-| `decel()` | cubic-bezier(0.05, 0.7, 0.1, 1) | `CubicBezierEasing` 同参数 |
-| `accel()` | cubic-bezier(0.3, 0, 1, 1) | 同上 |
-| `standard()` | cubic-bezier(0.2, 0, 0, 1) | 同上 |
-| `settle()` | interpolatingSpring(0, 1, 180, 26) | `spring(dampingRatio = 1f, stiffness = 180f)` |
-| `snap()` | interpolatingSpring(0, 1, 420, 34) | `spring(dampingRatio = 0.86f, stiffness = 420f)` |
-| `bounce()` | interpolatingSpring(0, 1, 340, 20) | `spring(dampingRatio = 0.54f, stiffness = 340f)` |
-| `follow()` | responsiveSpringMotion(0.3, 0.85) | `spring(dampingRatio = 0.85f, stiffness = 300f)` |
+没有 GPU 管线，全部走一个小的软件光栅器（`source/core/`）：
 
-ArkUI 的 `animateTo({ curve }) { x = v }` 在 Compose 里没有直接对应物
-（`animateFloatAsState` 一改目标就立刻按新 spec 补间，无法"分阶段"），
-所以 `ui/Anim.kt` 里做了个 `Anim` 类：**目标值 + 本次曲线** 一起存，
-写 `x.set(v, spec)` 就等于原版的一次 `animateTo`。这样：
+- 圆角矩形用有符号距离场求覆盖率，四角圆弧带抗锯齿；
+- 阴影是高斯衰减，模糊走可分离盒式模糊；
+- 文字用 stb_truetype 按需栅格化字形并缓存，字号按 em 映射（`ScaleForMappingEmToPixels`）；
+- 图标是从原版 SVG 压平的折线数据（`source/gen/icons.h`），自带原始颜色，任意尺寸都清晰。
 
-- 中途改目标会从当前进度接着走（和 ArkUI 一样，不会跳）；
-- 分阶段入场（今日页 40ms 后列表落下、90ms 标题、180ms 已记）靠 `after()` 排程，时序与原版逐毫秒一致；
-- 弹簧不配 duration。
+字体是 Noto Sans SC（OFL），只保留 GB2312 汉字、拉丁、假名、韩文与常用标点，两份合计约 4.9 MB。
 
-位移幅度统一走 `Motion.travel(base, 屏宽)`，手机和平板拿到不同数值，公式与原版相同。
-
-### 四个页面的入场
-
-| 页面 | 原版机制 | 是否照搬 |
-|---|---|---|
-| 今日 | 标题左 / 列表下 / 已记右，三段接力，各错 40·90·180ms | 是 |
-| 记录 | 时间轴竖线 `scaleY` 0→1 生长，卡片从 -26 滑入，逐张错峰 `min(i,8)×55ms` | 是 |
-| 日历 | 每行从 +48 撞入（`bounce`），行间隔 `min(55, 780/n)`，切换 7/14/30 天时整体重放 | 是 |
-| 设置 | 5 张卡左 / 下 / 右 / 左 / 下，逐张错 80ms | 是 |
-
-页面切换也照搬：离开 200ms（日历）/ 300ms（其它）`accel`，进入 `md(380/520)` 的 `decel`，
-位移 24（日历）/ 52（其它），并且进入后立刻触发目标页自己的入场。
-
-## 提醒
-
-鸿蒙版因为 ReminderAgent 配额为 0，改用系统日历写每日重复日程。**Android 上不需要这个绕路**，
-回到正统做法：
-
-- `AlarmManager.setInexactRepeating` 每日闹钟 + `DailyReminderReceiver`，到点数一遍今天要复习几条再弹通知；
-- 专注结束用 `setExactAndAllowWhileIdle` 一次性闹钟 + `FocusEndReceiver`；
-- 开机 / 应用更新后由 `BootReceiver` 重新挂上；
-- 设置页仍然显示「提醒方式 · N 个日程」，语义和原版一致（开着 = 1）。
-
-权限只有 `POST_NOTIFICATIONS`（Android 13+）、`SCHEDULE_EXACT_ALARM`、`RECEIVE_BOOT_COMPLETED`。
-用户拒绝通知权限只影响系统提醒，记录和复习照常。
+因为 Switch 面板固定 1280×720，而原版平板布局按 ~1200vp 排版，这里把界面画在
+**1024vp** 宽的逻辑画布上（1vp = 1.25px）：既让正文从 11px 提升到 14px 左右，
+也留出 576vp 高度让"记一条"面板完整显示。
 
 ## 构建
 
-需要 JDK 17 和 Android SDK 35：
+本机不需要装任何东西，CI 用 devkitPro 官方镜像：
+
+```yaml
+container: devkitpro/devkita64:latest
+run: make -j"$(nproc)"
+```
+
+产物 `folio.nro` 在仓库 Actions 的 `folio-nro` artifact 里。
+
+本地若要自己编（需要 devkitPro + libnx）：
 
 ```bash
-cd android
-./gradlew testDebugUnitTest   # 纯逻辑单元测试
-./gradlew assembleDebug       # 产物：app/build/outputs/apk/debug/app-debug.apk
+export DEVKITPRO=/opt/devkitpro
+make -j$(nproc)
 ```
 
-也可以直接交给 CI：推到 `main` 后 GitHub Actions 会自动跑测试并构建，
-APK 出现在 workflow 的 `folio-debug-apk` artifact 里；打 `v*` 标签会额外挂到 Release。
+### 桌面预览
 
-## 测试
+`tools/preview.cpp` 用同一套绘制代码离屏出图，方便在没有机器时核对布局：
 
-`app/src/test` 里是与鸿蒙版 `tests/` 一一对应的断言：
-
-- `FsrsTest` —— 初始权重、四档预览顺序、`[2, 11, 46, 163, 497]` 这条 golden 序列；
-- `SchedulingTest` —— 跨天取整、逾期奖励 1.5× 封顶、最长间隔截断、固定间隔模式；
-- `FocusTest` —— 倒计时格式（400ms 显示 00:01）、小结统计、周桶、每 4 轮长休息；
-- `MigrationTest` —— 旧数据迁移的各个分支与幂等性。
-
-## 目录
-
-```text
-android/
-  app/src/main/java/com/jiesheng/folio/
-    MainActivity.kt
-    domain/            Models、Dates、fsrs/、focus/
-    data/              Store（SharedPreferences）、Codec（JSON）
-    services/          I18n、I18nTables、ReminderService、Receivers
-    theme/             Tokens、Motion
-    ui/                FolioState（状态与交互）、各页面与浮层、Anim、Common
-  app/src/main/res/    图标（由原版 SVG 转的 vector）、配色、文案
-  app/src/test/        单元测试
+```bash
+g++ -std=gnu++17 -O1 -Isource -I. -D__SWITCH__ -DFOLIO_HOST=1 \
+    -o preview tools/preview.cpp source/core/*.cpp source/domain/*.cpp \
+    source/data/*.cpp source/services/*.cpp source/ui/*.cpp
+FOLIO_SEED=1 FOLIO_DATA_DIR=/tmp/folio ./preview 1280 720 out.png 0 150
 ```
-
-## 已知差异
-
-- **半透明卡片的模糊**：原版浮层用 `backdropBlur` 糊掉背后的页面，Compose 没有等价物。
-  这里给浮层里的卡片换成同色实底（`Tokens.surfaceSolid`），观感一致，但不会真的模糊背景。
-- **通知而不是系统日历**：见上。功能语义相同，实现方式更贴合 Android。
-- **系统返回键**：原版全屏窗口没有返回手势处理；Android 上目前按系统默认行为（回到桌面）。
 
 ## 许可
 
-与原版一致，[MIT](../LICENSE)。
+[MIT](../LICENSE)；字体为 SIL Open Font License 1.1（`res/fonts/OFL.txt`）。

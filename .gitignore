@@ -1,12 +1,16 @@
-*.iml
-.gradle
-.kotlin
-/local.properties
-/.idea
+# Build output
+build/
+*.elf
+*.nro
+*.nacp
+*.o
+*.d
+
+# Host preview binaries
+preview
+*.png
+
+# Editor
+.vscode/
+.idea/
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-app/build
-local.properties
