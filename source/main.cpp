@@ -50,7 +50,6 @@ const char* runApp() {
         return "Folio: display initialization failed.";
     }
     folio::startupLog("allocate drawing buffer");
-    }
     g_frame.resize(folio::platform().pixelWidth(), folio::platform().pixelHeight());
     g_canvas.attach(&g_frame);
     folio::platformSetFrameBitmap(&g_frame);
