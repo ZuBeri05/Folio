@@ -47,6 +47,9 @@ export NM  := $(DEVKITA64)/bin/aarch64-none-elf-nm
 
 LIBS    := -lnx
 
+# Embed res/ as a RomFS so fonts ship inside the .nro (romfsInit reads them).
+NROFLAGS := --romfsdir=$(CURDIR)/$(ROMFS)
+
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 
 #---------------------------------------------------------------------------------
