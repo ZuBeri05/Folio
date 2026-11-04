@@ -21,6 +21,7 @@ ROMFS       := res
 APP_TITLE   := Folio
 APP_AUTHOR  := Folio
 APP_VERSION := 1.1.2
+export APP_ICON := $(TOPDIR)/assets/icon.jpg
 
 #---------------------------------------------------------------------------------
 ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
@@ -94,7 +95,7 @@ DEPENDS := $(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 all: $(OUTPUT).nro
 
-$(OUTPUT).nro : $(OUTPUT).elf $(OUTPUT).nacp
+$(OUTPUT).nro : $(OUTPUT).elf $(OUTPUT).nacp $(APP_ICON)
 	elf2nro $< $@ --romfsdir="$(TOPDIR)/$(ROMFS)" --nacp="$(OUTPUT).nacp" --icon="$(APP_ICON)"
 $(OUTPUT).elf : $(OFILES)
 

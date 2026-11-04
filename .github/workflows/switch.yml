@@ -51,6 +51,10 @@ jobs:
           assert data[16:20] == b'NRO0', 'Invalid NRO header'
           asset_start = struct.unpack_from('<I', data, 24)[0]
           assert data[asset_start:asset_start + 4] == b'ASET', 'Missing NRO assets'
+          icon_offset, icon_size = struct.unpack_from('<QQ', data, asset_start + 8)
+          icon_start = asset_start + icon_offset
+          assert data[icon_start:icon_start + icon_size] == Path('assets/icon.jpg').read_bytes(), 'Missing Folio app icon'
+          print(f'Embedded: Folio app icon ({icon_size:,} bytes)')
           romfs_offset, romfs_size = struct.unpack_from('<QQ', data, asset_start + 40)
           romfs_start = asset_start + romfs_offset
           assert romfs_size > 0, 'Empty RomFS'
